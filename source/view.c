@@ -1501,6 +1501,7 @@ static void rofi_view_handle_keypress ( RofiViewState *state, xkb_stuff *xkb, xc
 
         action = abe_find_action ( modstate, key );
         if ( rofi_view_trigger_action ( state, action ) ) {
+            xcb->last_timestamp      = xkpe->time;
             return;
         }
     }
