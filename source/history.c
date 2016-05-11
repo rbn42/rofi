@@ -37,7 +37,7 @@
 #include "history.h"
 
 #define HISTORY_NAME_LENGTH    256
-#define HISTORY_MAX_ENTRIES    25
+#define HISTORY_MAX_ENTRIES    256
 
 typedef struct __element
 {
