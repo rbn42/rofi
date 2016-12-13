@@ -1,15 +1,15 @@
 #ifndef ROFI_XCB_INTERNAL_H
 #define ROFI_XCB_INTERNAL_H
-
+/** Indication we accept that startup notification api is not yet frozen */
 #define SN_API_NOT_YET_FROZEN
 #include <libsn/sn.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
+
 /**
  * Structure to keep xcb stuff around.
  */
-
 struct _xcb_stuff
 {
     xcb_connection_t      *connection;
@@ -18,7 +18,7 @@ struct _xcb_stuff
     int                   screen_nbr;
     SnDisplay             *sndisplay;
     SnLauncheeContext     *sncontext;
-    gboolean              has_xinerama;
+    struct _workarea      *monitors;
 };
 
 #endif

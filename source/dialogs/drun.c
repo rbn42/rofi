@@ -25,6 +25,7 @@
  *
  */
 #include <config.h>
+#ifdef ENABLE_DRUN
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -32,6 +33,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <strings.h>
 #include <string.h>
@@ -40,17 +42,22 @@
 #include "rofi.h"
 #include "settings.h"
 #include "helper.h"
-#include "textbox.h"
+#include "timings.h"
+#include "widgets/textbox.h"
 #include "history.h"
 #include "dialogs/drun.h"
 
-#define DRUN_CACHE_FILE    "rofi.druncache"
+#define DRUN_CACHE_FILE    "rofi2.druncache"
+#define LOG_DOMAIN         "Dialogs.DRun"
 
-static inline int execsh ( const char *cmd, int run_in_term )
+static inline int execsh ( const char *wd, const char *cmd, int run_in_term )
 {
     int  retv   = TRUE;
     char **args = NULL;
     int  argc   = 0;
+    if ( !cmd || !cmd[0] ) {
+        return 0;
+    }
     if ( run_in_term ) {
         helper_parse_setup ( config.run_shell_command, &args, &argc, "{cmd}", cmd, NULL );
     }
@@ -58,7 +65,7 @@ static inline int execsh ( const char *cmd, int run_in_term )
         helper_parse_setup ( config.run_command, &args, &argc, "{cmd}", cmd, NULL );
     }
     GError *error = NULL;
-    g_spawn_async ( NULL, args, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &error );
+    g_spawn_async ( wd, args, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &error );
     if ( error != NULL ) {
         char *msg = g_strdup_printf ( "Failed to execute: '%s'\nError: '%s'", cmd, error->message );
         rofi_view_error_dialog ( msg, FALSE  );
@@ -73,26 +80,20 @@ static inline int execsh ( const char *cmd, int run_in_term )
     return retv;
 }
 
-// execute sub-process
-static void exec_cmd ( const char *cmd, int run_in_term )
-{
-    if ( !cmd || !cmd[0] ) {
-        return;
-    }
-
-    execsh ( cmd, run_in_term );
-}
-
 /**
  * Store extra information about the entry.
  * Currently the executable and if it should run in terminal.
  */
 typedef struct
 {
+    /* Root */
+    char         *root;
     /* Path to desktop file */
     char         *path;
     /* Executable */
     char         *exec;
+    /* Path */
+    char         *exec_path;
     /* Name of the Entry */
     char         *name;
     /* Generic Name */
@@ -106,27 +107,97 @@ typedef struct
     DRunModeEntry *entry_list;
     unsigned int  cmd_list_length;
     unsigned int  history_length;
+    // List of disabled entries.
+    GHashTable    *disabled_entries;
+    unsigned int  disabled_entries_length;
 } DRunModePrivateData;
 
+struct RegexEvalArg
+{
+    DRunModeEntry *e;
+    gboolean      success;
+};
+static gboolean drun_helper_eval_cb ( const GMatchInfo *info, GString *res, gpointer data )
+{
+    // TODO quoting is not right? Find description not very clear, need to check.
+    struct RegexEvalArg *e = (struct RegexEvalArg *) data;
+
+    gchar               *match;
+    // Get the match
+    match = g_match_info_fetch ( info, 0 );
+    if ( match != NULL ) {
+        switch ( match[1] )
+        {
+        // Unsupported
+        case 'f':
+        case 'F':
+        case 'u':
+        case 'U':
+        case 'i':
+        // Deprecated
+        case 'd':
+        case 'D':
+        case 'n':
+        case 'N':
+        case 'v':
+        case 'm':
+            break;
+        case 'k':
+            if ( e->e->path ) {
+                char *esc = g_shell_quote ( e->e->path );
+                g_string_append ( res, esc );
+                g_free ( esc );
+            }
+            break;
+        case 'c':
+            if ( e->e->name ) {
+                char *esc = g_shell_quote ( e->e->name );
+                g_string_append ( res, esc );
+                g_free ( esc );
+            }
+            break;
+        // Invalid, this entry should not be processed -> throw error.
+        default:
+            e->success = FALSE;
+            g_free ( match );
+            return TRUE;
+        }
+        g_free ( match );
+    }
+    // Continue replacement.
+    return FALSE;
+}
 static void exec_cmd_entry ( DRunModeEntry *e )
 {
-    // strip % arguments
-    gchar *str = g_strdup ( e->exec );
-    for ( ssize_t i = 0; str != NULL && str[i] != '\0'; i++ ) {
-        if ( str[i] == '%' ) {
-            while ( str[i] != ' ' && str[i] != '\0' ) {
-                str[i++] = ' ';
-            }
-            // We might have hit '\0' in prev. loop, break out of for then.
-            if ( str[i] == '\0' ) {
-                break;
-            }
-        }
+    GError *error = NULL;
+    GRegex *reg   = g_regex_new ( "%[a-zA-Z]", 0, 0, &error );
+    if ( error != NULL ) {
+        fprintf ( stderr, "Internal error, failed to create regex: %s.\n", error->message );
+        g_error_free ( error );
+        return;
+    }
+    struct RegexEvalArg earg = { .e = e, .success = TRUE };
+    char                *str = g_regex_replace_eval ( reg, e->exec, -1, 0, 0, drun_helper_eval_cb, &earg, &error );
+    if ( error != NULL ) {
+        fprintf ( stderr, "Internal error, failed replace field codes: %s.\n", error->message );
+        g_error_free ( error );
+        return;
+    }
+    g_regex_unref ( reg );
+    if ( earg.success == FALSE ) {
+        fprintf ( stderr, "Invalid field code in Exec line: %s.\n", e->exec );;
+        return;
+    }
+    if ( str == NULL ) {
+        fprintf ( stderr, "Nothing to execute after processing: %s.\n", e->exec );;
+        return;
     }
     gchar *fp = rofi_expand_path ( g_strstrip ( str ) );
-    if ( execsh ( fp, e->terminal ) ) {
+    if ( execsh ( e->exec_path, fp, e->terminal ) ) {
         char *path = g_build_filename ( cache_dir, DRUN_CACHE_FILE, NULL );
-        history_set ( path, e->path );
+        char *key  = g_strdup_printf ( "%s:::%s", e->root, e->path );
+        history_set ( path, key );
+        g_free ( key );
         g_free ( path );
     }
     g_free ( str );
@@ -135,61 +206,94 @@ static void exec_cmd_entry ( DRunModeEntry *e )
 /**
  * This function absorbs/freeś path, so this is no longer available afterwards.
  */
-static void read_desktop_file ( DRunModePrivateData *pd, char *path, const char *filename )
+static void read_desktop_file ( DRunModePrivateData *pd, const char *root, const char *path )
 {
-    for ( unsigned int index = 0; index < pd->history_length; index++ ) {
-        if ( g_strcmp0 ( path, pd->entry_list[index].path ) == 0 ) {
-            g_free ( path );
-            return;
+    // Create ID on stack.
+    // We know strlen (path ) > strlen(root)+1
+    const ssize_t id_len = strlen ( path ) - strlen ( root );
+    char          id[id_len];
+    g_strlcpy ( id, &( path[strlen ( root ) + 1] ), id_len );
+    for ( int index = 0; index < id_len; index++ ) {
+        if ( id[index] == '/' ) {
+            id[index] = '-';
         }
+    }
+
+    // Check if item is on disabled list.
+    if ( g_hash_table_contains ( pd->disabled_entries, id ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Skipping: %s, was previously seen.", id );
+        return;
     }
     GKeyFile *kf    = g_key_file_new ();
     GError   *error = NULL;
     g_key_file_load_from_file ( kf, path, 0, &error );
     // If error, skip to next entry
     if ( error != NULL ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Failed to parse desktop file: %s because: %s", path, error->message );
         g_error_free ( error );
         g_key_file_free ( kf );
-        g_free ( path );
         return;
     }
+    // Skip non Application entries.
+    gchar *key = g_key_file_get_string ( kf, "Desktop Entry", "Type", NULL );
+    if ( key == NULL ) {
+        // No type? ignore.
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Skipping desktop file: %s because: No type indicated", path );
+        g_key_file_free ( kf );
+        return;
+    }
+    if ( g_strcmp0 ( key, "Application" ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Skipping desktop file: %s because: Not of type application (%s)", path, key );
+        g_free ( key );
+        g_key_file_free ( kf );
+        return;
+    }
+    g_free ( key );
+
+    // Name key is required.
+    if ( !g_key_file_has_key ( kf, "Desktop Entry", "Name", NULL ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Invalid DesktopFile: '%s', no 'Name' key present.\n", path );
+        g_key_file_free ( kf );
+        return;
+    }
+
     // Skip hidden entries.
-    if ( g_key_file_has_key ( kf, "Desktop Entry", "Hidden", NULL ) ) {
-        if ( g_key_file_get_boolean ( kf, "Desktop Entry", "Hidden", NULL ) ) {
-            g_key_file_free ( kf );
-            g_free ( path );
-            return;
-        }
+    if ( g_key_file_get_boolean ( kf, "Desktop Entry", "Hidden", NULL ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Adding desktop file: %s to disabled list because: Hdden", path );
+        g_key_file_free ( kf );
+        g_hash_table_add ( pd->disabled_entries, g_strdup ( id ) );
+        return;
     }
     // Skip entries that have NoDisplay set.
-    if ( g_key_file_has_key ( kf, "Desktop Entry", "NoDisplay", NULL ) ) {
-        if ( g_key_file_get_boolean ( kf, "Desktop Entry", "NoDisplay", NULL ) ) {
-            g_key_file_free ( kf );
-            g_free ( path );
-            return;
-        }
+    if ( g_key_file_get_boolean ( kf, "Desktop Entry", "NoDisplay", NULL ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Adding desktop file: %s to disabled list because: NoDisplay", path );
+        g_key_file_free ( kf );
+        g_hash_table_add ( pd->disabled_entries, g_strdup ( id ) );
+        return;
     }
-    if ( g_key_file_has_key ( kf, "Desktop Entry", "Exec", NULL ) ) {
-        size_t nl = ( ( pd->cmd_list_length ) + 1 );
-        pd->entry_list                               = g_realloc ( pd->entry_list, nl * sizeof ( *( pd->entry_list ) ) );
-        pd->entry_list[pd->cmd_list_length].path     = path;
-        pd->entry_list[pd->cmd_list_length].terminal = FALSE;
-        if ( g_key_file_has_key ( kf, "Desktop Entry", "Name", NULL ) ) {
-            gchar *n  = g_key_file_get_locale_string ( kf, "Desktop Entry", "Name", NULL, NULL );
-            gchar *gn = g_key_file_get_locale_string ( kf, "Desktop Entry", "GenericName", NULL, NULL );
-            pd->entry_list[pd->cmd_list_length].name         = n;
-            pd->entry_list[pd->cmd_list_length].generic_name = gn;
-        }
-        else {
-            pd->entry_list[pd->cmd_list_length].name         = g_filename_display_name ( filename );
-            pd->entry_list[pd->cmd_list_length].generic_name = NULL;
-        }
-        pd->entry_list[pd->cmd_list_length].exec = g_key_file_get_string ( kf, "Desktop Entry", "Exec", NULL );
-        if ( g_key_file_has_key ( kf, "Desktop Entry", "Terminal", NULL ) ) {
-            pd->entry_list[pd->cmd_list_length].terminal = g_key_file_get_boolean ( kf, "Desktop Entry", "Terminal", NULL );
-        }
-        ( pd->cmd_list_length )++;
+    // We need Exec, don't support DBusActivatable
+    if ( !g_key_file_has_key ( kf, "Desktop Entry", "Exec", NULL ) ) {
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Unsupported DesktopFile: '%s', no 'Exec' key present.\n", path );
+        g_key_file_free ( kf );
+        return;
     }
+    size_t nl = ( ( pd->cmd_list_length ) + 1 );
+    pd->entry_list                           = g_realloc ( pd->entry_list, nl * sizeof ( *( pd->entry_list ) ) );
+    pd->entry_list[pd->cmd_list_length].root = g_strdup ( root );
+    pd->entry_list[pd->cmd_list_length].path = g_strdup ( path );
+    gchar *n = g_key_file_get_locale_string ( kf, "Desktop Entry", "Name", NULL, NULL );
+    pd->entry_list[pd->cmd_list_length].name = n;
+    gchar *gn = g_key_file_get_locale_string ( kf, "Desktop Entry", "GenericName", NULL, NULL );
+    pd->entry_list[pd->cmd_list_length].generic_name = gn;
+    pd->entry_list[pd->cmd_list_length].exec         = g_key_file_get_string ( kf, "Desktop Entry", "Exec", NULL );
+    // Returns false if not found, if key not found, we don't want run in terminal.
+    pd->entry_list[pd->cmd_list_length].terminal = g_key_file_get_boolean ( kf, "Desktop Entry", "Terminal", NULL );
+
+    // Returns NULL if not found.
+    pd->entry_list[pd->cmd_list_length].exec_path = g_key_file_get_string ( kf, "Desktop Entry", "Path", NULL );
+    // We don't want to parse items with this id anymore.
+    g_hash_table_add ( pd->disabled_entries, g_strdup ( id ) );
+    ( pd->cmd_list_length )++;
 
     g_key_file_free ( kf );
 }
@@ -197,30 +301,69 @@ static void read_desktop_file ( DRunModePrivateData *pd, char *path, const char 
 /**
  * Internal spider used to get list of executables.
  */
-static void get_apps_dir ( DRunModePrivateData *pd, const char *bp )
+static void walk_dir ( DRunModePrivateData *pd, const char *root, const char *dirname )
 {
-    DIR *dir = opendir ( bp );
+    DIR *dir;
 
-    if ( dir != NULL ) {
-        struct dirent *dent;
+    g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Checking directory %s for desktop files.", root );
+    dir = opendir ( dirname );
+    if ( dir == NULL ) {
+        return;
+    }
 
-        while ( ( dent = readdir ( dir ) ) != NULL ) {
-            if ( dent->d_type != DT_REG && dent->d_type != DT_LNK && dent->d_type != DT_UNKNOWN ) {
-                continue;
-            }
-            // Skip dot files.
-            if ( dent->d_name[0] == '.' ) {
-                continue;
-            }
-            gchar *path = g_build_filename ( bp, dent->d_name, NULL );
-            read_desktop_file ( pd, path, dent->d_name );
+    struct dirent *file;
+    gchar         *filename = NULL;
+    struct stat   st;
+    while ( ( file = readdir ( dir ) ) != NULL ) {
+        if ( file->d_name[0] == '.' ) {
+            continue;
+        }
+        switch ( file->d_type )
+        {
+        case DT_LNK:
+        case DT_REG:
+        case DT_DIR:
+        case DT_UNKNOWN:
+            filename = g_build_filename ( dirname, file->d_name, NULL );
+            break;
+        default:
+            continue;
         }
 
-        closedir ( dir );
+        // On a link, or if FS does not support providing this information
+        // Fallback to stat method.
+        if ( file->d_type == DT_LNK || file->d_type == DT_UNKNOWN ) {
+            file->d_type = DT_UNKNOWN;
+            if ( stat ( filename, &st ) == 0 ) {
+                if ( S_ISDIR ( st.st_mode ) ) {
+                    file->d_type = DT_DIR;
+                }
+                else if ( S_ISREG ( st.st_mode ) ) {
+                    file->d_type = DT_REG;
+                }
+            }
+        }
+
+        switch ( file->d_type )
+        {
+        case DT_REG:
+            // Skip files not ending on .desktop.
+            if ( g_str_has_suffix ( file->d_name, ".desktop" ) ) {
+                read_desktop_file ( pd, root, filename );
+            }
+            break;
+        case DT_DIR:
+            walk_dir ( pd, root, filename );
+            break;
+        default:
+            break;
+        }
+        g_free ( filename );
     }
+    closedir ( dir );
 }
 /**
- * @param cmd The command to remove from history
+ * @param entry The command entry to remove from history
  *
  * Remove command from history.
  */
@@ -232,6 +375,7 @@ static void delete_entry_history ( const DRunModeEntry *entry )
 
     g_free ( path );
 }
+
 static void get_apps_history ( DRunModePrivateData *pd )
 {
     unsigned int length = 0;
@@ -239,51 +383,42 @@ static void get_apps_history ( DRunModePrivateData *pd )
     gchar        **retv = history_get_list ( path, &length );
     g_free ( path );
     for ( unsigned int index = 0; index < length; index++ ) {
-        gchar *name = g_path_get_basename ( retv[index] );
-        read_desktop_file ( pd, retv[index], name );
-        g_free ( name );
+        char **st = g_strsplit ( retv[index], ":::", 2 );
+        if ( st && st[0] && st[1] ) {
+            read_desktop_file ( pd, st[0], st[1] );
+        }
+        g_strfreev ( st );
     }
-    g_free ( retv );
+    g_strfreev ( retv );
     pd->history_length = pd->cmd_list_length;
 }
+
 static void get_apps ( DRunModePrivateData *pd )
 {
+    TICK_N ( "Get Desktop apps (start)" );
     get_apps_history ( pd );
-    const char * const * dr   = g_get_system_data_dirs ();
-    const char * const * iter = dr;
-    while ( iter != NULL && *iter != NULL && **iter != '\0' ) {
-        gboolean skip = FALSE;
-        for ( size_t i = 0; !skip && dr[i] != ( *iter ); i++ ) {
-            skip = ( g_strcmp0 ( *iter, dr[i] ) == 0 );
-        }
-        if ( skip ) {
-            iter++;
-            continue;
-        }
-        gchar *bp = g_build_filename ( *iter, "applications", NULL );
-        get_apps_dir ( pd, bp );
-        g_free ( bp );
-        iter++;
-    }
 
-    const char *d = g_get_user_data_dir ();
-    for ( size_t i = 0; dr && dr[i] != NULL; i++ ) {
-        if ( g_strcmp0 ( d, dr[i] ) == 0 ) {
-            // Done this already, no need to repeat.
-            return;
-        }
+    gchar *dir;
+    // First read the user directory.
+    dir = g_build_filename ( g_get_user_data_dir (), "applications", NULL );
+    walk_dir ( pd, dir, dir );
+    g_free ( dir );
+    TICK_N ( "Get Desktop apps (user dir)" );
+    // Then read thee system data dirs.
+    const gchar * const * sys = g_get_system_data_dirs ();
+    for (; *sys != NULL; ++sys ) {
+        dir = g_build_filename ( *sys, "applications", NULL );
+        walk_dir ( pd, dir, dir );
+        g_free ( dir );
     }
-    if ( d ) {
-        gchar *bp = g_build_filename ( d, "applications", NULL );
-        get_apps_dir ( pd, bp );
-        g_free ( bp );
-    }
+    TICK_N ( "Get Desktop apps (system dirs)" );
 }
 
 static int drun_mode_init ( Mode *sw )
 {
     if ( mode_get_private_data ( sw ) == NULL ) {
         DRunModePrivateData *pd = g_malloc0 ( sizeof ( *pd ) );
+        pd->disabled_entries = g_hash_table_new_full ( g_str_hash, g_str_equal, g_free, NULL );
         mode_set_private_data ( sw, (void *) pd );
         get_apps ( pd );
     }
@@ -291,8 +426,10 @@ static int drun_mode_init ( Mode *sw )
 }
 static void drun_entry_clear ( DRunModeEntry *e )
 {
+    g_free ( e->root );
     g_free ( e->path );
     g_free ( e->exec );
+    g_free ( e->exec_path );
     g_free ( e->name );
     g_free ( e->generic_name );
 }
@@ -317,7 +454,7 @@ static ModeMode drun_mode_result ( Mode *sw, int mretv, char **input, unsigned i
         exec_cmd_entry ( &( rmpd->entry_list[selected_line] ) );
     }
     else if ( ( mretv & MENU_CUSTOM_INPUT ) && *input != NULL && *input[0] != '\0' ) {
-        exec_cmd ( *input, run_in_term );
+        execsh ( NULL, *input, run_in_term );
     }
     else if ( ( mretv & MENU_ENTRY_DELETE ) && selected_line < rmpd->cmd_list_length ) {
         if ( selected_line < rmpd->history_length ) {
@@ -338,6 +475,7 @@ static void drun_mode_destroy ( Mode *sw )
         for ( size_t i = 0; i < rmpd->cmd_list_length; i++ ) {
             drun_entry_clear ( &( rmpd->entry_list[i] ) );
         }
+        g_hash_table_destroy ( rmpd->disabled_entries );
         g_free ( rmpd->entry_list );
         g_free ( rmpd );
         mode_set_private_data ( sw, NULL );
@@ -378,29 +516,24 @@ static char *drun_get_completion ( const Mode *sw, unsigned int index )
     }
 }
 
-static int drun_token_match ( const Mode *data,
-                              char **tokens,
-                              int not_ascii,
-                              int case_sensitive,
-                              unsigned int index
-                              )
+static int drun_token_match ( const Mode *data, GRegex **tokens, unsigned int index )
 {
     DRunModePrivateData *rmpd = (DRunModePrivateData *) mode_get_private_data ( data );
     int                 match = 1;
     if ( tokens ) {
         for ( int j = 0; match && tokens != NULL && tokens[j] != NULL; j++ ) {
-            int  test        = 0;
-            char *ftokens[2] = { tokens[j], NULL };
+            int    test        = 0;
+            GRegex *ftokens[2] = { tokens[j], NULL };
             if ( !test && rmpd->entry_list[index].name &&
-                 token_match ( ftokens, rmpd->entry_list[index].name, not_ascii, case_sensitive ) ) {
+                 token_match ( ftokens, rmpd->entry_list[index].name ) ) {
                 test = 1;
             }
             if ( !test && rmpd->entry_list[index].generic_name &&
-                 token_match ( ftokens, rmpd->entry_list[index].generic_name, not_ascii, case_sensitive ) ) {
+                 token_match ( ftokens, rmpd->entry_list[index].generic_name ) ) {
                 test = 1;
             }
 
-            if ( !test && token_match ( ftokens, rmpd->entry_list[index].exec, not_ascii, case_sensitive ) ) {
+            if ( !test && token_match ( ftokens, rmpd->entry_list[index].exec ) ) {
                 test = 1;
             }
             if ( test == 0 ) {
@@ -416,15 +549,6 @@ static unsigned int drun_mode_get_num_entries ( const Mode *sw )
     const DRunModePrivateData *pd = (const DRunModePrivateData *) mode_get_private_data ( sw );
     return pd->cmd_list_length;
 }
-static int drun_is_not_ascii ( const Mode *sw, unsigned int index )
-{
-    DRunModePrivateData *pd = (DRunModePrivateData *) mode_get_private_data ( sw );
-    if ( pd->entry_list[index].generic_name ) {
-        return !g_str_is_ascii ( pd->entry_list[index].name ) || !g_str_is_ascii ( pd->entry_list[index].generic_name );
-    }
-    return !g_str_is_ascii ( pd->entry_list[index].name );
-}
-
 #include "mode-private.h"
 Mode drun_mode =
 {
@@ -437,7 +561,9 @@ Mode drun_mode =
     ._token_match       = drun_token_match,
     ._get_completion    = drun_get_completion,
     ._get_display_value = _get_display_value,
-    ._is_not_ascii      = drun_is_not_ascii,
+    ._preprocess_input  = NULL,
     .private_data       = NULL,
     .free               = NULL
 };
+
+#endif // ENABLE_DRUN

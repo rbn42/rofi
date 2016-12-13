@@ -39,9 +39,14 @@
 
 #define HISTORY_MAX_ENTRIES    2048
 
+/**
+ * History element
+ */
 typedef struct __element
 {
+    /** Index in history */
     long int index;
+    /** Entry */
     char     *name;
 }_element;
 
@@ -99,7 +104,7 @@ static _element ** __history_get_element_list ( FILE *fd, unsigned int *length )
             continue;
         }
         start++;
-        if ( ( l - ( start - buffer ) ) < 3 ) {
+        if ( ( l - ( start - buffer ) ) < 2 ) {
             continue;
         }
         // Resize and check.

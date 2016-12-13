@@ -28,14 +28,27 @@
 #include <ctype.h>
 #include <string.h>
 #include <glib.h>
+#include <math.h>
 #include "settings.h"
-#include "textbox.h"
+#include "widgets/textbox.h"
 #include "keyb.h"
 #include "x11-helper.h"
 #include "mode.h"
 #include "view.h"
 
-#define SIDE_MARGIN    1
+#define DOT_OFFSET    15
+
+static void textbox_draw ( widget *, cairo_t * );
+static void textbox_free ( widget * );
+static int textbox_get_width ( widget * );
+static int _textbox_get_height ( widget * );
+
+/**
+ * @param tb  Handle to the textbox
+ *
+ * Move the cursor to the end of the string.
+ */
+static void textbox_cursor_end ( textbox *tb );
 
 /**
  * Font + font color cache.
@@ -50,16 +63,25 @@ typedef struct
     Color hlbg;
 } RowColor;
 
+/** Number of states */
 #define num_states    3
-RowColor     colors[num_states];
+/**
+ * Different colors for the different states
+ */
+RowColor colors[num_states];
 
-PangoContext *p_context = NULL;
+/** Default pango context */
+static PangoContext     *p_context = NULL;
+/** The pango font metrics */
+static PangoFontMetrics *p_metrics = NULL;
+
 static gboolean textbox_blink ( gpointer data )
 {
     textbox *tb = (textbox *) data;
     if ( tb->blink < 2 ) {
         tb->blink  = !tb->blink;
         tb->update = TRUE;
+        widget_queue_redraw ( WIDGET ( tb ) );
         rofi_view_queue_redraw ( );
     }
     else {
@@ -68,12 +90,23 @@ static gboolean textbox_blink ( gpointer data )
     return TRUE;
 }
 
+static void textbox_resize ( widget *wid, short w, short h )
+{
+    textbox *tb = (textbox *) wid;
+    textbox_moveresize ( tb, tb->widget.x, tb->widget.y, w, h );
+}
+
 textbox* textbox_create ( TextboxFlags flags, short x, short y, short w, short h,
                           TextBoxFontType tbft, const char *text )
 {
     textbox *tb = g_slice_new0 ( textbox );
 
-    tb->flags = flags;
+    tb->widget.draw       = textbox_draw;
+    tb->widget.free       = textbox_free;
+    tb->widget.resize     = textbox_resize;
+    tb->widget.get_width  = textbox_get_width;
+    tb->widget.get_height = _textbox_get_height;
+    tb->flags             = flags;
 
     tb->widget.x = x;
     tb->widget.y = y;
@@ -102,12 +135,17 @@ textbox* textbox_create ( TextboxFlags flags, short x, short y, short w, short h
         tb->blink_timeout = g_timeout_add ( 1200, textbox_blink, tb );
     }
 
+    // Enabled by default
+    tb->widget.enabled = TRUE;
     return tb;
 }
 
 void textbox_font ( textbox *tb, TextBoxFontType tbft )
 {
     TextBoxFontType t = tbft & STATE_MASK;
+    if ( tb == NULL ) {
+        return;
+    }
     // ACTIVE has priority over URGENT if both set.
     if ( t == ( URGENT | ACTIVE ) ) {
         t = ACTIVE;
@@ -128,12 +166,9 @@ void textbox_font ( textbox *tb, TextBoxFontType tbft )
         tb->color_fg = color->fg;
         break;
     }
-    if ( ( tbft & SELECTED ) == SELECTED ) {
-        tb->color_bg = color->hlbg;
-        tb->color_fg = color->hlfg;
-    }
     if ( tb->tbft != tbft ) {
         tb->update = TRUE;
+        widget_queue_redraw ( WIDGET ( tb ) );
     }
     tb->tbft = tbft;
 }
@@ -162,6 +197,18 @@ static void __textbox_update_pango_text ( textbox *tb )
         pango_layout_set_text ( tb->layout, tb->text, -1 );
     }
 }
+const char *textbox_get_visible_text ( const textbox *tb )
+{
+    return pango_layout_get_text ( tb->layout );
+}
+PangoAttrList *textbox_get_pango_attributes ( textbox *tb )
+{
+    return pango_layout_get_attributes ( tb->layout );
+}
+void textbox_set_pango_attributes ( textbox *tb, PangoAttrList *list )
+{
+    pango_layout_set_attributes ( tb->layout, list );
+}
 
 // set the default text to display
 void textbox_text ( textbox *tb, const char *text )
@@ -185,17 +232,21 @@ void textbox_text ( textbox *tb, const char *text )
     __textbox_update_pango_text ( tb );
     if ( tb->flags & TB_AUTOWIDTH ) {
         textbox_moveresize ( tb, tb->widget.x, tb->widget.y, tb->widget.w, tb->widget.h );
+        widget_update ( WIDGET ( tb ) );
     }
 
-    tb->cursor = MAX ( 0, MIN ( ( int ) strlen ( text ), tb->cursor ) );
+    tb->cursor = MAX ( 0, MIN ( ( int ) g_utf8_strlen ( tb->text, -1 ), tb->cursor ) );
+    widget_queue_redraw ( WIDGET ( tb ) );
 }
 
 // within the parent handled auto width/height modes
 void textbox_moveresize ( textbox *tb, int x, int y, int w, int h )
 {
+    unsigned int offset = ( tb->flags & TB_INDICATOR ) ? DOT_OFFSET : 0;
     if ( tb->flags & TB_AUTOWIDTH ) {
         pango_layout_set_width ( tb->layout, -1 );
-        w = textbox_get_width ( tb );
+        unsigned int offset = ( tb->flags & TB_INDICATOR ) ? DOT_OFFSET : 0;
+        w = textbox_get_font_width ( tb ) + 2 * config.line_padding + offset;
     }
     else {
         // set ellipsize
@@ -210,7 +261,7 @@ void textbox_moveresize ( textbox *tb, int x, int y, int w, int h )
     if ( tb->flags & TB_AUTOHEIGHT ) {
         // Width determines height!
         int tw = MAX ( 1, w );
-        pango_layout_set_width ( tb->layout, PANGO_SCALE * ( tw - 2 * SIDE_MARGIN ) );
+        pango_layout_set_width ( tb->layout, PANGO_SCALE * ( tw - 2 * config.line_padding - offset ) );
         h = textbox_get_height ( tb );
     }
 
@@ -222,16 +273,15 @@ void textbox_moveresize ( textbox *tb, int x, int y, int w, int h )
     }
 
     // We always want to update this
-    pango_layout_set_width ( tb->layout, PANGO_SCALE * ( tb->widget.w - 2 * SIDE_MARGIN ) );
+    pango_layout_set_width ( tb->layout, PANGO_SCALE * ( tb->widget.w - 2 * config.line_padding - offset ) );
     tb->update = TRUE;
+    widget_queue_redraw ( WIDGET ( tb ) );
 }
 
 // will also unmap the window if still displayed
-void textbox_free ( textbox *tb )
+static void textbox_free ( widget *wid )
 {
-    if ( tb == NULL ) {
-        return;
-    }
+    textbox *tb = (textbox *) wid;
     if ( tb->blink_timeout > 0 ) {
         g_source_remove ( tb->blink_timeout );
         tb->blink_timeout = 0;
@@ -257,6 +307,7 @@ void textbox_free ( textbox *tb )
 static void texbox_update ( textbox *tb )
 {
     if ( tb->update ) {
+        unsigned int offset = ( tb->flags & TB_INDICATOR ) ? DOT_OFFSET : 0;
         if ( tb->main_surface ) {
             cairo_destroy ( tb->main_draw );
             cairo_surface_destroy ( tb->main_surface );
@@ -268,59 +319,50 @@ static void texbox_update ( textbox *tb )
         cairo_set_operator ( tb->main_draw, CAIRO_OPERATOR_SOURCE );
 
         pango_cairo_update_layout ( tb->main_draw, tb->layout );
-        char *text       = tb->text ? tb->text : "";
-        int  text_len    = strlen ( text );
-        int  font_height = textbox_get_font_height ( tb );
+        int font_height = textbox_get_font_height ( tb );
 
-        int  cursor_x     = 0;
-        int  cursor_width = MAX ( 2, font_height / 10 );
+        int cursor_x     = 0;
+        int cursor_width = MAX ( 2, font_height / 10 );
 
         if ( tb->changed ) {
             __textbox_update_pango_text ( tb );
         }
 
         if ( tb->flags & TB_EDITABLE ) {
+            // We want to place the cursor based on the text shown.
+            const char     *text = pango_layout_get_text ( tb->layout );
+            // Clamp the position, should not be needed, but we are paranoid.
+            int            cursor_offset = MIN ( tb->cursor, g_utf8_strlen ( text, -1 ) );
             PangoRectangle pos;
-            int            cursor_offset = 0;
-            cursor_offset = MIN ( tb->cursor, text_len );
-            pango_layout_get_cursor_pos ( tb->layout, cursor_offset, &pos, NULL );
-            // Add a small 4px offset between cursor and last glyph.
+            // convert to byte location.
+            char           *offset = g_utf8_offset_to_pointer ( text, cursor_offset );
+            pango_layout_get_cursor_pos ( tb->layout, offset - text, &pos, NULL );
             cursor_x = pos.x / PANGO_SCALE;
         }
 
         // Skip the side MARGIN on the X axis.
-        int x = SIDE_MARGIN;
+        int x = config.line_padding + offset;
         int y = 0;
 
         if ( tb->flags & TB_RIGHT ) {
             int line_width = 0;
             // Get actual width.
             pango_layout_get_pixel_size ( tb->layout, &line_width, NULL );
-            x = ( tb->widget.w - line_width - SIDE_MARGIN );
+            x = ( tb->widget.w - line_width - config.line_padding - offset );
         }
         else if ( tb->flags & TB_CENTER ) {
             int tw = textbox_get_font_width ( tb );
-            x = (  ( tb->widget.w - tw - 2 * SIDE_MARGIN ) ) / 2;
+            x = (  ( tb->widget.w - tw - 2 * config.line_padding - offset ) ) / 2;
         }
-        short fh = textbox_get_font_height ( tb );
-        if ( fh > tb->widget.h ) {
-            y = 0;
-        }
-        else {
-            y = (   ( tb->widget.h - fh ) ) / 2;
-        }
+        y = config.line_padding + ( pango_font_metrics_get_ascent ( p_metrics ) - pango_layout_get_baseline ( tb->layout ) ) / PANGO_SCALE;
 
         // Set ARGB
-        Color  col   = tb->color_bg;
-        double scale = 1.0;
-        if ( ( tb->tbft & SELECTED ) == SELECTED && ( tb->tbft & FMOD_MASK ) != HIGHLIGHT ) {
-            scale = 0.4;
-        }
-        cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha * scale );
+        Color col = tb->color_bg;
+        cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha );
         cairo_paint ( tb->main_draw );
 
         col = tb->color_fg;
-        cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha * scale );
+        cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha );
         // draw the cursor
         if ( tb->flags & TB_EDITABLE && tb->blink ) {
             cairo_rectangle ( tb->main_draw, x + cursor_x, y, cursor_width, font_height );
@@ -333,11 +375,24 @@ static void texbox_update ( textbox *tb )
         cairo_move_to ( tb->main_draw, x, y );
         pango_cairo_show_layout ( tb->main_draw, tb->layout );
 
+        if ( ( tb->flags & TB_INDICATOR ) == TB_INDICATOR && ( tb->tbft & ( SELECTED | HIGHLIGHT ) ) ) {
+            if ( ( tb->tbft & SELECTED ) == SELECTED ) {
+                cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha );
+            }
+            else if ( ( tb->tbft & HIGHLIGHT ) == HIGHLIGHT ) {
+                cairo_set_source_rgba ( tb->main_draw, col.red, col.green, col.blue, col.alpha * 0.2 );
+            }
+
+            cairo_arc ( tb->main_draw, DOT_OFFSET / 2.0, tb->widget.h / 2.0, 2.0, 0, 2.0 * M_PI );
+            cairo_fill ( tb->main_draw );
+        }
+
         tb->update = FALSE;
     }
 }
-void textbox_draw ( textbox *tb, cairo_t *draw )
+static void textbox_draw ( widget *wid, cairo_t *draw )
 {
+    textbox *tb = (textbox *) wid;
     texbox_update ( tb );
 
     /* Write buffer */
@@ -350,23 +405,32 @@ void textbox_draw ( textbox *tb, cairo_t *draw )
 // cursor handling for edit mode
 void textbox_cursor ( textbox *tb, int pos )
 {
-    int length = ( tb->text == NULL ) ? 0 : strlen ( tb->text );
+    int length = ( tb->text == NULL ) ? 0 : g_utf8_strlen ( tb->text, -1 );
     tb->cursor = MAX ( 0, MIN ( length, pos ) );
     tb->update = TRUE;
+    // Stop blink!
+    tb->blink = 3;
+    widget_queue_redraw ( WIDGET ( tb ) );
 }
 
-// move right
-void textbox_cursor_inc ( textbox *tb )
+/**
+ * @param tb Handle to the textbox
+ *
+ * Move cursor one position forward.
+ */
+static void textbox_cursor_inc ( textbox *tb )
 {
-    int index = g_utf8_next_char ( &( tb->text[tb->cursor] ) ) - tb->text;
-    textbox_cursor ( tb, index );
+    textbox_cursor ( tb, tb->cursor + 1 );
 }
 
-// move left
-void textbox_cursor_dec ( textbox *tb )
+/**
+ * @param tb Handle to the textbox
+ *
+ * Move cursor one position backward.
+ */
+static void textbox_cursor_dec ( textbox *tb )
 {
-    int index = g_utf8_prev_char ( &( tb->text[tb->cursor] ) ) - tb->text;
-    textbox_cursor ( tb, index );
+    textbox_cursor ( tb, tb->cursor - 1 );
 }
 
 // Move word right
@@ -376,7 +440,7 @@ static void textbox_cursor_inc_word ( textbox *tb )
         return;
     }
     // Find word boundaries, with pango_Break?
-    gchar *c = &( tb->text[tb->cursor] );
+    gchar *c = g_utf8_offset_to_pointer ( tb->text, tb->cursor );
     while ( ( c = g_utf8_next_char ( c ) ) ) {
         gunichar          uc = g_utf8_get_char ( c );
         GUnicodeBreakType bt = g_unichar_break_type ( uc );
@@ -385,7 +449,7 @@ static void textbox_cursor_inc_word ( textbox *tb )
             break;
         }
     }
-    if ( c == NULL ) {
+    if ( c == NULL || *c == '\0' ) {
         return;
     }
     while ( ( c = g_utf8_next_char ( c ) ) ) {
@@ -396,7 +460,7 @@ static void textbox_cursor_inc_word ( textbox *tb )
             break;
         }
     }
-    int index = c - tb->text;
+    int index = g_utf8_pointer_to_offset ( tb->text, c );
     textbox_cursor ( tb, index );
 }
 // move word left
@@ -404,7 +468,7 @@ static void textbox_cursor_dec_word ( textbox *tb )
 {
     // Find word boundaries, with pango_Break?
     gchar *n;
-    gchar *c = &( tb->text[tb->cursor] );
+    gchar *c = g_utf8_offset_to_pointer ( tb->text, tb->cursor );
     while ( ( c = g_utf8_prev_char ( c ) ) && c != tb->text ) {
         gunichar          uc = g_utf8_get_char ( c );
         GUnicodeBreakType bt = g_unichar_break_type ( uc );
@@ -427,26 +491,32 @@ static void textbox_cursor_dec_word ( textbox *tb )
             }
         }
     }
-    int index = c - tb->text;
+    int index = g_utf8_pointer_to_offset ( tb->text, c );
     textbox_cursor ( tb, index );
 }
 
 // end of line
-void textbox_cursor_end ( textbox *tb )
+static void textbox_cursor_end ( textbox *tb )
 {
     if ( tb->text == NULL ) {
         tb->cursor = 0;
         tb->update = TRUE;
+        widget_queue_redraw ( WIDGET ( tb ) );
         return;
     }
-    tb->cursor = ( int ) strlen ( tb->text );
+    tb->cursor = ( int ) g_utf8_strlen ( tb->text, -1 );
     tb->update = TRUE;
+    widget_queue_redraw ( WIDGET ( tb ) );
+    // Stop blink!
+    tb->blink = 2;
 }
 
 // insert text
-void textbox_insert ( textbox *tb, int pos, char *str, int slen )
+void textbox_insert ( textbox *tb, const int char_pos, const char *str, const int slen )
 {
-    int len = ( int ) strlen ( tb->text );
+    char *c  = g_utf8_offset_to_pointer ( tb->text, char_pos );
+    int  pos = c - tb->text;
+    int  len = ( int ) strlen ( tb->text );
     pos = MAX ( 0, MIN ( len, pos ) );
     // expand buffer
     tb->text = g_realloc ( tb->text, len + slen + 1 );
@@ -457,6 +527,8 @@ void textbox_insert ( textbox *tb, int pos, char *str, int slen )
     memmove ( at, str, slen );
 
     // Set modified, lay out need te be redrawn
+    // Stop blink!
+    tb->blink   = 2;
     tb->changed = TRUE;
     tb->update  = TRUE;
 }
@@ -464,12 +536,19 @@ void textbox_insert ( textbox *tb, int pos, char *str, int slen )
 // remove text
 void textbox_delete ( textbox *tb, int pos, int dlen )
 {
-    int len = strlen ( tb->text );
+    int len = g_utf8_strlen ( tb->text, -1 );
+    if ( len == pos ) {
+        return;
+    }
     pos = MAX ( 0, MIN ( len, pos ) );
+    if ( ( pos + dlen ) > len ) {
+        dlen = len - dlen;
+    }
     // move everything after pos+dlen down
-    char *at = tb->text + pos;
+    char *start = g_utf8_offset_to_pointer ( tb->text, pos );
+    char *end   = g_utf8_offset_to_pointer  ( tb->text, pos + dlen );
     // Move remainder + closing \0
-    memmove ( at, at + dlen, len - pos - dlen + 1 );
+    memmove ( start, end, ( tb->text + strlen ( tb->text ) ) - end + 1 );
     if ( tb->cursor >= pos && tb->cursor < ( pos + dlen ) ) {
         tb->cursor = pos;
     }
@@ -477,22 +556,31 @@ void textbox_delete ( textbox *tb, int pos, int dlen )
         tb->cursor -= dlen;
     }
     // Set modified, lay out need te be redrawn
+    // Stop blink!
+    tb->blink   = 2;
     tb->changed = TRUE;
     tb->update  = TRUE;
 }
 
-// delete on character
-void textbox_cursor_del ( textbox *tb )
+/**
+ * @param tb Handle to the textbox
+ *
+ * Delete character after cursor.
+ */
+static void textbox_cursor_del ( textbox *tb )
 {
     if ( tb->text == NULL ) {
         return;
     }
-    int index = g_utf8_next_char ( &( tb->text[tb->cursor] ) ) - tb->text;
-    textbox_delete ( tb, tb->cursor, index - tb->cursor );
+    textbox_delete ( tb, tb->cursor, 1 );
 }
 
-// back up and delete one character
-void textbox_cursor_bkspc ( textbox *tb )
+/**
+ * @param tb Handle to the textbox
+ *
+ * Delete character before cursor.
+ */
+static void textbox_cursor_bkspc ( textbox *tb )
 {
     if ( tb->cursor > 0 ) {
         textbox_cursor_dec ( tb );
@@ -506,6 +594,24 @@ static void textbox_cursor_bkspc_word ( textbox *tb )
         textbox_cursor_dec_word ( tb );
         if ( cursor > tb->cursor ) {
             textbox_delete ( tb, tb->cursor, cursor - tb->cursor );
+        }
+    }
+}
+static void textbox_cursor_del_eol ( textbox *tb )
+{
+    if ( tb->cursor >= 0 ) {
+        int length = g_utf8_strlen ( tb->text, -1 ) - tb->cursor;
+        if ( length >= 0 ) {
+            textbox_delete ( tb, tb->cursor, length );
+        }
+    }
+}
+static void textbox_cursor_del_sol ( textbox *tb )
+{
+    if ( tb->cursor >= 0 ) {
+        int length = tb->cursor;
+        if ( length >= 0 ) {
+            textbox_delete ( tb, 0, length );
         }
     }
 }
@@ -528,7 +634,7 @@ static void textbox_cursor_del_word ( textbox *tb )
 int textbox_keybinding ( textbox *tb, KeyBindingAction action )
 {
     if ( !( tb->flags & TB_EDITABLE ) ) {
-        g_return_val_if_reached ( 0 );
+        return 0;
     }
 
     switch ( action )
@@ -561,6 +667,12 @@ int textbox_keybinding ( textbox *tb, KeyBindingAction action )
     case REMOVE_WORD_FORWARD:
         textbox_cursor_del_word ( tb );
         return 1;
+    case REMOVE_TO_EOL:
+        textbox_cursor_del_eol ( tb );
+        return 1;
+    case REMOVE_TO_SOL:
+        textbox_cursor_del_sol ( tb );
+        return 1;
     // Delete or Ctrl-D
     case REMOVE_CHAR_FORWARD:
         textbox_cursor_del ( tb );
@@ -577,33 +689,23 @@ int textbox_keybinding ( textbox *tb, KeyBindingAction action )
     case REMOVE_CHAR_BACK:
         textbox_cursor_bkspc ( tb );
         return 1;
-    case ACCEPT_CUSTOM:
-        return -2;
-    case ACCEPT_ENTRY:
-        return -1;
     default:
         g_return_val_if_reached ( 0 );
     }
-
-    g_return_val_if_reached ( 0 );
 }
 
-gboolean textbox_append ( textbox *tb, char *pad, int pad_len )
+gboolean textbox_append_char ( textbox *tb, const char *pad, const int pad_len )
 {
     if ( !( tb->flags & TB_EDITABLE ) ) {
         return FALSE;
     }
-    int old_blink = tb->blink;
-    tb->blink = 2;
 
     // Filter When alt/ctrl is pressed do not accept the character.
-    if (  !g_ascii_iscntrl ( *pad ) ) {
+    if ( !g_unichar_iscntrl ( g_utf8_get_char ( pad ) ) ) {
         textbox_insert ( tb, tb->cursor, pad, pad_len );
-        textbox_cursor ( tb, tb->cursor + pad_len );
+        textbox_cursor ( tb, tb->cursor + 1 );
         return TRUE;
     }
-
-    tb->blink = old_blink;
     return FALSE;
 }
 
@@ -654,34 +756,58 @@ void textbox_set_pango_context ( PangoContext *p )
 {
     textbox_cleanup ();
     p_context = g_object_ref ( p );
+    p_metrics = pango_context_get_metrics ( p_context, NULL, NULL );
 }
 
 void textbox_cleanup ( void )
 {
+    if ( p_metrics ) {
+        pango_font_metrics_unref ( p_metrics );
+        p_metrics = NULL;
+    }
     if ( p_context ) {
         g_object_unref ( p_context );
         p_context = NULL;
     }
 }
 
-int textbox_get_width ( textbox *tb )
+int textbox_get_width ( widget *wid )
 {
-    return textbox_get_font_width ( tb ) + 2 * SIDE_MARGIN;
+    textbox *tb = (textbox *) wid;
+    if ( !wid->expand ) {
+        if ( tb->flags & TB_AUTOWIDTH ) {
+            unsigned int offset = ( tb->flags & TB_INDICATOR ) ? DOT_OFFSET : 0;
+            return textbox_get_font_width ( tb ) + 2 * config.line_padding + offset;
+        }
+        return tb->widget.w;
+    }
+    return tb->widget.w;
 }
 
-int textbox_get_height ( textbox *tb )
+int _textbox_get_height ( widget *wid )
 {
-    return textbox_get_font_height ( tb ) + 2 * SIDE_MARGIN;
+    textbox *tb = (textbox *) wid;
+    if ( !wid->expand ) {
+        if ( tb->flags & TB_AUTOHEIGHT ) {
+            return textbox_get_height ( tb );
+        }
+        return tb->widget.h;
+    }
+    return tb->widget.h;
+}
+int textbox_get_height ( const textbox *tb )
+{
+    return textbox_get_font_height ( tb ) + 2 * config.line_padding;
 }
 
-int textbox_get_font_height ( textbox *tb )
+int textbox_get_font_height ( const textbox *tb )
 {
     int height;
     pango_layout_get_pixel_size ( tb->layout, NULL, &height );
     return height;
 }
 
-int textbox_get_font_width ( textbox *tb )
+int textbox_get_font_width ( const textbox *tb )
 {
     int width;
     pango_layout_get_pixel_size ( tb->layout, &width, NULL );
@@ -690,18 +816,12 @@ int textbox_get_font_width ( textbox *tb )
 
 double textbox_get_estimated_char_width ( void )
 {
-    // Get width
-    PangoFontMetrics *metric = pango_context_get_metrics ( p_context, NULL, NULL );
-    int              width   = pango_font_metrics_get_approximate_char_width ( metric );
-    pango_font_metrics_unref ( metric );
+    int width = pango_font_metrics_get_approximate_char_width ( p_metrics );
     return ( width ) / (double) PANGO_SCALE;
 }
 
 int textbox_get_estimated_char_height ( void )
 {
-    // Get width
-    PangoFontMetrics *metric = pango_context_get_metrics ( p_context, NULL, NULL );
-    int              height  = pango_font_metrics_get_ascent ( metric ) + pango_font_metrics_get_descent ( metric );
-    pango_font_metrics_unref ( metric );
-    return ( height ) / PANGO_SCALE + 2 * SIDE_MARGIN;
+    int height = pango_font_metrics_get_ascent ( p_metrics ) + pango_font_metrics_get_descent ( p_metrics );
+    return ( height ) / PANGO_SCALE + 2 * config.line_padding;
 }

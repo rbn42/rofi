@@ -11,7 +11,9 @@ include $(top_srcdir)/libgwater-xcb-nolibtool.mk
 ##
 bin_PROGRAMS=rofi
 
-dist_bin_SCRIPTS=script/rofi-sensible-terminal
+dist_bin_SCRIPTS=\
+	script/rofi-sensible-terminal\
+	script/rofi-theme-selector
 
 nodist_rofi_SOURCES=\
 	$(top_builddir)/gitconfig.h
@@ -23,12 +25,14 @@ rofi_SOURCES=\
 	source/keyb.c\
 	config/config.c\
 	source/helper.c\
-	source/widget.c\
-	source/textbox.c\
 	source/timings.c\
 	source/history.c\
-	source/scrollbar.c\
-	source/i3-support.c\
+	source/widgets/box.c\
+	source/widgets/widget.c\
+	source/widgets/textbox.c\
+	source/widgets/listview.c\
+	source/widgets/scrollbar.c\
+	source/widgets/separator.c\
 	source/xrmoptions.c\
 	source/x11-helper.c\
 	source/dialogs/run.c\
@@ -38,6 +42,7 @@ rofi_SOURCES=\
 	source/dialogs/combi.c\
 	source/dialogs/window.c\
 	source/dialogs/script.c\
+	source/dialogs/help-keys.c\
 	include/xcb.h\
 	include/xcb-internal.h\
 	include/rofi.h\
@@ -50,11 +55,14 @@ rofi_SOURCES=\
 	include/helper.h\
 	include/timings.h\
 	include/history.h\
-	include/widget.h\
-	include/textbox.h\
-	include/scrollbar.h\
+	include/widgets/box.h\
+	include/widgets/widget.h\
+	include/widgets/widget-internal.h\
+	include/widgets/textbox.h\
+	include/widgets/listview.h\
+	include/widgets/scrollbar.h\
+	include/widgets/separator.h\
 	include/xrmoptions.h\
-	include/i3-support.h\
 	include/x11-helper.h\
 	include/dialogs/ssh.h\
 	include/dialogs/run.h\
@@ -64,6 +72,7 @@ rofi_SOURCES=\
 	include/dialogs/script.h\
 	include/dialogs/window.h\
 	include/dialogs/dialogs.h\
+	include/dialogs/help-keys.h\
 	include/xkb.h\
 	include/xkb-internal.h
 
@@ -71,8 +80,6 @@ rofi_CFLAGS=\
 	$(AM_CFLAGS)\
 	$(glib_CFLAGS)\
 	$(GW_XCB_CFLAGS)\
-	$(x11_CFLAGS)\
-	$(xinerama_CFLAGS)\
 	$(pango_CFLAGS)\
 	$(libsn_CFLAGS)\
 	$(cairo_CFLAGS)\
@@ -86,8 +93,6 @@ rofi_CFLAGS=\
 rofi_LDADD=\
 	$(glib_LIBS)\
 	$(GW_XCB_LIBS)\
-	$(x11_LIBS)\
-	$(xinerama_LIBS)\
 	$(libsn_LIBS)\
 	$(pango_LIBS)\
 	$(cairo_LIBS)\
@@ -116,6 +121,34 @@ markdown_FILES=\
 
 README.html: README.md
 	$(md_verbose) markdown $< > $@
+
+###
+# Themes
+###
+themedir=$(pkgdatadir)/themes/
+theme_DATA=\
+		   themes/Adapta-Nokto.theme\
+		   themes/Arc.theme\
+		   themes/DarkBlue.theme\
+		   themes/Indego.theme\
+		   themes/Monokai.theme\
+		   themes/Paper.theme\
+		   themes/android_notification.theme\
+		   themes/blor.theme\
+		   themes/blue.theme\
+		   themes/c64.theme\
+		   themes/glue_pro_blue.theme\
+		   themes/gruvbox-dark-hard.theme\
+		   themes/gruvbox-dark-soft.theme\
+		   themes/gruvbox-dark.theme\
+		   themes/gruvbox-light-hard.theme\
+		   themes/gruvbox-light-soft.theme\
+		   themes/gruvbox-light.theme\
+		   themes/lb.theme\
+		   themes/purple.theme\
+		   themes/solarized.theme\
+		   themes/solarized_alternate.theme
+
 ##
 # Extra DIST
 ##
@@ -127,8 +160,8 @@ EXTRA_DIST=\
 	AUTHORS\
 	doc/rofi.doxy.in\
 	script/get_git_rev.sh\
+	$(theme_DATA)\
 	Changelog
-
 ##
 # Indent
 ##
@@ -140,7 +173,18 @@ update-manpage: $(top_srcdir)/doc/rofi-manpage.markdown
 ##
 # Rofi test program
 ##
-check_PROGRAMS=history_test textbox_test helper_test helper_expand helper_config_cmdline_parser
+check_PROGRAMS=\
+			   history_test\
+			   textbox_test\
+			   helper_test\
+			   helper_expand\
+			   helper_pidfile\
+			   helper_tokenize\
+			   helper_config_cmdline_parser\
+			   widget_test\
+			   box_test\
+			   scrollbar_test
+
 
 history_test_CFLAGS=\
 	$(AM_CFLAGS)\
@@ -168,8 +212,6 @@ textbox_test_CFLAGS=\
 	$(AM_CFLAGS)\
 	$(glib_CFLAGS)\
 	$(pango_CFLAGS)\
-	$(x11_CFLAGS)\
-	$(xinerama_CFLAGS)\
 	$(GW_XCB_CFLAGS)\
 	$(cairo_CFLAGS)\
 	$(libsn_CFLAGS)\
@@ -180,24 +222,72 @@ textbox_test_CFLAGS=\
 textbox_test_LDADD=\
 	$(glib_LIBS)\
 	$(pango_LIBS)\
-	$(x11_LIBS)\
-	$(xinerama_LIBS)\
 	$(GW_XCB_LIBS)\
 	$(cairo_LIBS)\
 	$(libsn_LIBS)
 
+helper_pidfile_CFLAGS=$(textbox_test_CFLAGS)
+helper_pidfile_LDADD=$(textbox_test_LDADD)
+helper_pidfile_SOURCES=\
+					   config/config.c\
+					   include/rofi.h\
+					   include/mode.h\
+					   include/mode-private.h\
+					   source/helper.c\
+					   include/helper.h\
+					   include/xrmoptions.h\
+					   source/xrmoptions.c\
+					   source/x11-helper.c\
+					   include/x11-helper.h\
+					   test/helper-pidfile.c
+					   
+helper_tokenize_CFLAGS=$(textbox_test_CFLAGS)
+helper_tokenize_LDADD=$(textbox_test_LDADD)
+helper_tokenize_SOURCES=\
+					   config/config.c\
+					   include/rofi.h\
+					   include/mode.h\
+					   include/mode-private.h\
+					   source/helper.c\
+					   include/helper.h\
+					   include/xrmoptions.h\
+					   source/xrmoptions.c\
+					   source/x11-helper.c\
+					   include/x11-helper.h\
+					   test/helper-tokenize.c
+
+widget_test_LDADD=$(textbox_test_LDADD)
+widget_test_CFLAGS=$(textbox_test_CFLAGS)
+widget_test_SOURCES=\
+			source/widgets/widget.c\
+			test/widget-test.c
+
+box_test_LDADD=$(textbox_test_LDADD)
+box_test_CFLAGS=$(textbox_test_CFLAGS)
+box_test_SOURCES=\
+			source/widgets/widget.c\
+			source/widgets/box.c\
+			test/box-test.c
+
+scrollbar_test_LDADD=$(textbox_test_LDADD)
+scrollbar_test_CFLAGS=$(textbox_test_CFLAGS)
+scrollbar_test_SOURCES=\
+			source/widgets/widget.c\
+			source/widgets/scrollbar.c\
+			test/scrollbar-test.c
+
 textbox_test_SOURCES=\
-	source/widget.c\
-	source/textbox.c\
+	source/widgets/widget.c\
+	source/widgets/textbox.c\
 	config/config.c\
 	include/keyb.h\
 	include/rofi.h\
 	include/mode.h\
 	include/mode-private.h\
 	include/settings.h\
-	include/widget.h\
-	include/textbox.h\
-	include/widget.h\
+	include/widgets/widget.h\
+	include/widgets/widget-internal.h\
+	include/widgets/textbox.h\
 	include/xrmoptions.h\
 	include/helper.h\
 	test/textbox-test.c
@@ -218,8 +308,6 @@ helper_test_CFLAGS=\
 	$(AM_CFLAGS)\
 	$(glib_CFLAGS)\
 	$(pango_CFLAGS)\
-	$(x11_CFLAGS)\
-	$(xinerama_CFLAGS)\
 	$(GW_XCB_CFLAGS)\
 	$(cairo_CFLAGS)\
 	$(libsn_CFLAGS)\
@@ -230,9 +318,7 @@ helper_test_CFLAGS=\
 helper_test_LDADD=\
 	$(glib_LIBS)\
 	$(pango_LIBS)\
-	$(x11_LIBS)\
 	$(GW_XCB_LIBS)\
-	$(xinerama_LIBS)\
 	$(libsn_LIBS)\
 	$(cairo_LIBS)
 
@@ -271,12 +357,16 @@ TESTS=\
 	history_test\
 	helper_test\
 	helper_expand\
-	helper_config_cmdline_parser
+	helper_pidfile\
+	helper_tokenize\
+	helper_config_cmdline_parser\
+	textbox_test\
+	widget_test\
+	box_test\
+	scrollbar_test
 
 .PHONY: test-x
-test-x: $(bin_PROGRAMS) textbox_test
-	echo "Test 1"
-	$(top_srcdir)/test/run_test.sh 123 $(top_builddir)/textbox_test $(top_builddir)
+test-x: $(bin_PROGRAMS) 
 	echo "Test 2"
 	$(top_srcdir)/test/run_test.sh 200 $(top_srcdir)/test/run_errormsg_test.sh $(top_builddir)
 	echo "Test 3"
@@ -309,12 +399,12 @@ test-x: $(bin_PROGRAMS) textbox_test
 	$(top_srcdir)/test/run_test.sh 215 $(top_srcdir)/test/run_regex_test.sh $(top_builddir)
 	echo "Test dmenu glob"
 	$(top_srcdir)/test/run_test.sh 216 $(top_srcdir)/test/run_glob_test.sh $(top_builddir)
-	echo "Test dmenu fuzzy"
-	$(top_srcdir)/test/run_test.sh 217 $(top_srcdir)/test/run_fuzzy_test.sh $(top_builddir)
 	echo "Test config dump"
 	$(top_srcdir)/test/run_test.sh 218 $(top_srcdir)/test/xr_config_test.sh $(top_builddir) $(top_srcdir)
 	echo "Test issue 333"
 	$(top_srcdir)/test/run_test.sh 221 $(top_srcdir)/test/run_issue333_test.sh $(top_builddir)
+	echo "Test help output"
+	$(top_srcdir)/test/run_test.sh 212 $(top_srcdir)/test/help_output_test.sh $(top_builddir) $(top_srcdir)
 
 test-x1: $(bin_PROGRAMS)
 	echo "Test dmenu-normal-window"
@@ -348,6 +438,24 @@ $(top_builddir)/gitconfig.h: .FORCE
 	$(top_srcdir)/script/get_git_rev.sh $(top_srcdir) $(top_builddir)/gitconfig.h
 
 $(rofi_SOURCES): $(top_builddir)/gitconfig.h
+
+.PHONY: coverage
+coverage: coverage/index.html
+
+.PHONY: coverage-cli
+coverage-cli: coverage.info
+	lcov -l $^
+coverage.info: $(top_builddir)/test/*.gcda $(top_builddir)/source/*.gcda  $(top_builddir)/source/**/*.gcda
+	lcov --capture  --directory $(top_builddir) --output-file coverage.info
+	lcov -r $@ /usr/include/\* -o $@
+
+coverage/index.html: coverage.info
+	genhtml $^ --output-directory coverage/
+
+.PHONY: coverage-clean
+coverage-clean:
+	-rm -r coverage.info coverage/
+	-find $(top_builddir) -name '*.gcda' | xargs rm
 
 .PHONY: .FORCE
 .FORCE:

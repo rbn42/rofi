@@ -1,11 +1,12 @@
 #ifndef ROFI_SCROLLBAR_H
 #define ROFI_SCROLLBAR_H
 #include <cairo.h>
-#include "widget.h"
+#include "widgets/widget.h"
+#include "widgets/widget-internal.h"
 
 /**
  * @defgroup Scrollbar Scrollbar
- * @ingroup Widgets
+ * @ingroup widget
  *
  * @{
  */
@@ -14,16 +15,13 @@
  */
 typedef struct _scrollbar
 {
-    Widget       widget;
+    widget       widget;
     unsigned int length;
     unsigned int pos;
     unsigned int pos_length;
 } scrollbar;
 
 /**
- * @param parent the parent window
- * @param vinfo The XVisualInfo to use when creating new window
- * @param map   The colormap to use for new window
  * @param x     The x coordinate (relative to parent) to position the new scrollbar
  * @param y     The y coordinate (relative to parent) to position the new scrollbar
  * @param w     The width of the scrollbar
@@ -34,13 +32,6 @@ typedef struct _scrollbar
  * @returns the scrollbar object.
  */
 scrollbar *scrollbar_create ( short x, short y, short w, short h );
-
-/**
- * @param sb scrollbar object
- *
- * Free the resources used by the scrollbar.
- */
-void scrollbar_free ( scrollbar *sb );
 
 /**
  * @param sb scrollbar object
@@ -68,27 +59,11 @@ void scrollbar_set_max_value ( scrollbar *sb, unsigned int max );
 
 /**
  * @param sb scrollbar object
- *
- * Draw the scrollbar, used after expose event or update
- */
-void scrollbar_draw ( scrollbar *sb, cairo_t *draw );
-
-/**
- * @param sb scrollbar object
  * @param y  clicked position
  *
  * Calculate the position of the click relative to the max value of bar
  */
-unsigned int scrollbar_clicked ( scrollbar *sb, int y );
-
-/**
- * @param sb scrollbar object
- * @param w  new width in pixels
- * @param h  new height in pixels
- *
- * Resize the scrollbar.
- */
-void scrollbar_resize ( scrollbar *sb, int w, int h );
+unsigned int scrollbar_clicked ( const scrollbar *sb, int y );
 
 /*@}*/
 #endif // ROFI_SCROLLBAR_H

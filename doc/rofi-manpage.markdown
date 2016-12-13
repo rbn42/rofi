@@ -15,16 +15,17 @@
 [ -location *position* ]
 [ -fixed-num-lines ]
 [ -padding *padding* ]
-[ -opacity *opacity%* ]
 [ -display *display* ]
 [ -bw *width* ]
 [ -dmenu [ -p *prompt* ] [ -sep *separator* ] [ -l *selected line* ] [ -mesg ] [ -select ] [ -input *input* ] ]
 [ -filter *filter* ]
 [ -ssh-client *client* ]
 [ -ssh-command *command* ]
+[ -window-command *command* ]
 [ -disable-history ]
 [ -levenshtein-sort ]
 [ -case-sensitive ]
+[ -cycle ]
 [ -show *mode* ]
 [ -modi *mode1,mode2* ]
 [ -eh *element height* ]
@@ -33,9 +34,6 @@
 [ -a *row* ]
 [ -u *row* ]
 [ -pid *path* ]
-[ -now ]
-[ -rnow ]
-[ -snow ]
 [ -version ]
 [ -help ]
 [ -dump-xresources ]
@@ -46,9 +44,9 @@
 [ -combi-modi *mode1,mode2* ]
 [ -normal-window ]
 [ -fake-transparency ]
-[ -glob  ]
-[ -regex ]
+[ -matching *method* ]
 [ -tokenize ]
+[ -no-click-to-exit ]
 [ -threads *num* ]
 [ -config *filename* ]
 
@@ -85,6 +83,7 @@ There are currently three methods of setting configuration options (evaluated in
    This is the recommended way of configuring **rofi**.
  * Configuration File: This uses the same format as the Xresources file.
    By default it looks in `XDG_USER_CONFIG_DIR`/rofi/config, but can be overriden on commandline.
+   By default XDG_USER_CONFIG_DIR defaults to `$HOME/.config`.
  * Command-line options: Arguments passed to **rofi**.
  * System configuration file (f.e. /etc/rofi.conf).
 
@@ -176,7 +175,7 @@ Custom modes can be added using the internal 'script' mode. Each mode has two pa
 
     <name>:<script>
 
-Example: Have a mode 'Workspaces' using the `i3_switch_workspace.sh` script:
+Example: Have a mode 'Workspaces' using the `i3_switch_workspaces.sh` script:
 
     rofi -modi "window,run,ssh,Workspaces:i3_switch_workspaces.sh" -show Workspaces
 
@@ -184,9 +183,9 @@ Example: Have a mode 'Workspaces' using the `i3_switch_workspace.sh` script:
 
 Start in case sensitive mode.
 
-`-fuzzy`
+`-cycle`
 
-Enable experimental fuzzy matching.
+Cycle through the results list. Default is 'true'.
 
 `-filter` *filter*
 
@@ -219,14 +218,6 @@ Specify a font. Pango syntax is used.
     rofi -font "Dejavu Sans Mono 14"
 
 Default: *mono 12*
-
-`-opacity`
-
-Set window opacity (0-100).
-
-    rofi -opacity "75"
-
-Default: *100*
 
 `-eh` *element height*
 
@@ -276,14 +267,19 @@ Hide the scrollbar.
 
 Set the scrollbar width.
 
-`-glob`
+`-matching` *method*
 
-Use glob style matching
-*Warning this option might be slow on large lists*
+Specify the matching algorithm used.
+Current the following methods are supported.
 
-`-regex`
+* **normal**: Match the int string.
+* **regex**: Match a regex input.
+* **glob**: Match a glob pattern.
+* **fuzzy**: Do a fuzzy match.
 
-Use regex matching
+   Default: normal
+
+   Note:, glob matching might be slow for larger lists.
 
 `-tokenize`
 
@@ -371,19 +367,27 @@ Default: *5000*
 When one entry is left, automatically select it.
 
 `-m` *num*
+
+`-m` *name*
+
 `-monitor` *num*
 
-Select (Xinerama) monitor to display **rofi** on.
-Negative numbers are handled differently:
+`-monitor` *name*
+
+Select monitor to display **rofi** on.
+As input it accepts: *primary* (if primary output is set), the *xrandr* output name or integer number (in order of
+detection).  Negative numbers are handled differently:
 
  *  **-1**: the currently focused monitor.
  *  **-2**: the currently focused window (i.e. rofi will be displayed on top of the focused window).
- *  **-3**: Position at mouse (still follows the location setting, use `-location 1` to get normal context menu
+ *  **-3**: Position at mouse (overrides the location setting to get normal context menu
     behaviour.)
  *  **-4**: the monitor with the focused window.
  *  **-5**: the monitor that shows the mouse pointer.
 
-    Default: *-1*
+    Default: *-5*
+
+See `rofi -h` output for the detected monitors, their position and size.
 
 ### PATTERN setting
 
@@ -447,6 +451,13 @@ Default: *{terminal} -e {cmd}*
 If set, use an external tool to generate list of executable commands. Uses 'run-command'
 
 Default: *""*
+
+`-window-command` *cmd*
+
+Set command to execute on selected window for custom action.
+See *PATTERN*.
+
+Default: *"xkill -id {window}"*
 
 ### Combi settings
 
@@ -554,7 +565,7 @@ For more information on supported markup see [here](https://developer.gnome.org/
 
 `-normal-window`
 
-Make **rofi** reacts like a normal application window. Useful for scripts like Clerk that are basically an application.
+Make **rofi** react like a normal application window. Useful for scripts like Clerk that are basically an application.
 
 `-dump`
 
@@ -570,6 +581,36 @@ Reads from *file* instead of stdin.
 
 Hide the input text. This should not be considered secure!
 
+`-markup-rows`
+
+Tell **rofi** that DMenu input is pango markup encoded and should be rendered.
+See [here](https://developer.gnome.org/pango/stable/PangoMarkupFormat.html) for details about pango markup.
+
+
+`-multi-select`
+
+Allow multiple lines to be selected. Adds a small selection indicator to the left of each entry.
+
+### Window Mode
+
+`-window-format` *format*
+
+Format what is being displayed for windows.
+
+*format*: {field[:len]}
+
+*field*:
+
+ * **w**: Desktop name
+ * **t**: Title of window
+ * **n**: Name
+ * **r**: Role
+ * **c**: Class
+
+*len*: maximum field length (0 for auto-size). If length negative and window *width* is negative field length is *width - len*.
+
+
+default: {w}  {c}   {t}
 
 ### Message dialog
 
@@ -587,12 +628,23 @@ simultaneously. This is useful when running **rofi** from a keybinding daemon.
 
 `-fake-transparency`
 
-Enable fake transparency. This only works with transparent background color in the theme, not the opacity setting.
+Enable fake transparency. This only works with transparent background color in the theme.
 
 `-fake-background`
 
 Select what to use as background for fake transparency. This can be 'background', 'screenshot' or a path to an image
 file (currently only supports png).
+
+`-display-{mode}` *string*
+
+Set the name to use for mode. This is used as prompt and in combi-browser.
+
+`-click-to-exit`
+`-no-click-to-exit`
+
+Click the mouse outside of the **rofi** window to exit.
+
+Default: *enabled*
 
 ### Debug
 
@@ -712,10 +764,14 @@ A keybinding starting with `!` will act when all keys have been released.
 ### Window
 
 Show a list of all the windows and allow switching between them.
+Pressing the `delete-entry` binding (`shift-delete`) will kill the window.
+Pressing the `accept-custom` binding (`control-enter` or `shift-enter`) will run a command on the window.
 
 ### WindowCD
 
 Shows a list of the windows on the current desktop and allows switching between them.
+Pressing the `delete-entry` binding (`shift-delete`) will kill the window.
+Pressing the `accept-custom` binding (`control-enter` or `shift-enter`) will run a command on the window.
 
 ### Run
 
@@ -732,21 +788,25 @@ Pressing the `accept-custom` binding (`control-enter` or `shift-enter`) with cus
 
 Shows a list of SSH targets based on your ssh config file, and allows to quickly ssh into them.
 
+### Keys
+
+Shows a searchable list of key bindings.
+
 ### Script
 
 Allows custom scripted Modi to be added.
 
 ## FAQ
 
-### Text in window switcher is not nicely lined out
+### The text in the window switcher is not nicely lined out.
 
 Try using a mono-space font.
 
-### **rofi** is completely black.
+### The window is completely black.
 
 Check quotes used on the commandline: e.g. used “ instead of ".
 
-### **rofi** what does the icon in the top right show?
+### What does the icon in the top right show?
 
 The indicator shows:
 
@@ -784,6 +844,13 @@ The indicator shows:
 
 **rofi** bugtracker can be found [here](https://github.com/DaveDavenport/rofi/issues)
 
+**rofi** support can be obtained [here](irc://irc.freenode.net/#rofi) (#rofi on irc.freenode.net), or via the
+[forum](https://forum.qtools.org/)
+
+## SEE ALSO
+
+rofi-sensible-terminal(1)
+
 ## AUTHOR
 
 Qball Cow <qball@gmpclient.org>
@@ -791,6 +858,7 @@ Qball Cow <qball@gmpclient.org>
 Rasmus Steinke <rasi@xssn.at>
 
 Quentin Glidic <sardemff7+rofi@sardemff7.net>
+
 
 Original code based on work by: Sean Pringle <sean.pringle@gmail.com>
 

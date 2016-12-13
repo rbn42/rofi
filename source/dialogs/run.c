@@ -54,6 +54,9 @@
  */
 #define RUN_CACHE_FILE    "rofi-3.runcache"
 
+/** The log domain of this dialog. */
+#define LOG_DOMAIN        "Dialogs.Run"
+
 /**
  * The internal data structure holding the private data of the Run Mode.
  */
@@ -120,17 +123,19 @@ static void exec_cmd ( const char *cmd, int run_in_term )
         return;
     }
 
+    char *path = g_build_filename ( cache_dir, RUN_CACHE_FILE, NULL );
     if (  execsh ( lf_cmd, run_in_term ) ) {
         /**
          * This happens in non-critical time (After launching app)
          * It is allowed to be a bit slower.
          */
-        char *path = g_build_filename ( cache_dir, RUN_CACHE_FILE, NULL );
 
         history_set ( path, cmd );
-
-        g_free ( path );
     }
+    else {
+        history_remove ( path, cmd );
+    }
+    g_free ( path );
     g_free ( lf_cmd );
 }
 
@@ -151,12 +156,13 @@ static void delete_entry ( const char *cmd )
 /**
  * @param a The First key to compare
  * @param b The second key to compare
+ * @param data Unused.
  *
  * Function used for sorting.
  *
  * @returns returns less then, equal to and greater than zero is a is less than, is a match or greater than b.
  */
-static int sort_func ( const void *a, const void *b, void *data __attribute__( ( unused ) ) )
+static int sort_func ( const void *a, const void *b, G_GNUC_UNUSED void *data )
 {
     const char *astr = *( const char * const * ) a;
     const char *bstr = *( const char * const * ) b;
@@ -248,23 +254,26 @@ static char ** get_apps ( unsigned int *length )
     gsize l        = 0;
     gchar *homedir = g_locale_to_utf8 (  g_get_home_dir (), -1, NULL, &l, &error );
     if ( error != NULL ) {
-        fprintf ( stderr, "Failed to convert homedir to UTF-8: %s\n", error->message );
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Failed to convert homedir to UTF-8: %s", error->message );
         g_clear_error ( &error );
         g_free ( homedir );
         return NULL;
     }
 
-    const char *const sep = ":";
-    for ( const char *dirname = strtok ( path, sep ); dirname != NULL; dirname = strtok ( NULL, sep ) ) {
+    const char *const sep                 = ":";
+    char              *strtok_savepointer = NULL;
+    for ( const char *dirname = strtok_r ( path, sep, &strtok_savepointer ); dirname != NULL; dirname = strtok_r ( NULL, sep, &strtok_savepointer ) ) {
         DIR *dir = opendir ( dirname );
 
+        g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Checking path %s for executable.", dirname );
         if ( dir != NULL ) {
             struct dirent *dent;
             gsize         dirn_len = 0;
             gchar         *dirn    = g_locale_to_utf8 ( dirname, -1, NULL, &dirn_len, &error );
             if ( error != NULL ) {
-                fprintf ( stderr, "Failed to convert directory name to UTF-8: %s\n", error->message );
+                g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Failed to convert directory name to UTF-8: %s", error->message );
                 g_clear_error ( &error );
+                closedir ( dir );
                 continue;
             }
             gboolean is_homedir = g_str_has_prefix ( dirn, homedir );
@@ -290,7 +299,7 @@ static char ** get_apps ( unsigned int *length )
                 gsize name_len;
                 gchar *name = g_filename_to_utf8 ( dent->d_name, -1, NULL, &name_len, &error );
                 if ( error != NULL ) {
-                    fprintf ( stderr, "Failed to convert filename to UTF-8: %s\n", error->message );
+                    g_log ( LOG_DOMAIN, G_LOG_LEVEL_DEBUG, "Failed to convert filename to UTF-8: %s", error->message );
                     g_clear_error ( &error );
                     g_free ( name );
                     continue;
@@ -305,6 +314,7 @@ static char ** get_apps ( unsigned int *length )
                 }
 
                 if ( found == 1 ) {
+                    g_free ( name );
                     continue;
                 }
 
@@ -418,16 +428,10 @@ static char *_get_display_value ( const Mode *sw, unsigned int selected_line, G_
     const RunModePrivateData *rmpd = (const RunModePrivateData *) sw->private_data;
     return get_entry ? g_strdup ( rmpd->cmd_list[selected_line] ) : NULL;
 }
-static int run_token_match ( const Mode *sw, char **tokens, int not_ascii, int case_sensitive, unsigned int index )
+static int run_token_match ( const Mode *sw, GRegex **tokens, unsigned int index )
 {
     const RunModePrivateData *rmpd = (const RunModePrivateData *) sw->private_data;
-    return token_match ( tokens, rmpd->cmd_list[index], not_ascii, case_sensitive );
-}
-
-static int run_is_not_ascii ( const Mode *sw, unsigned int index )
-{
-    const RunModePrivateData *rmpd = (const RunModePrivateData *) sw->private_data;
-    return !g_str_is_ascii ( rmpd->cmd_list[index] );
+    return token_match ( tokens, rmpd->cmd_list[index] );
 }
 
 #include "mode-private.h"
@@ -442,7 +446,7 @@ Mode run_mode =
     ._token_match       = run_token_match,
     ._get_display_value = _get_display_value,
     ._get_completion    = NULL,
-    ._is_not_ascii      = run_is_not_ascii,
+    ._preprocess_input  = NULL,
     .private_data       = NULL,
     .free               = NULL
 };

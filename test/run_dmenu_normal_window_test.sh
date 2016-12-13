@@ -2,7 +2,8 @@
 
 # wait till it is up, run rofi with error message
 sleep 1;
-echo -e -n "aap\nnoot\nmies" | rofi -dmenu  -normal-window  > output.txt & 
+ulimit -c unlimited
+echo -e -n "aap\nnoot\nmies" | rofi -dmenu  -normal-window  -multi-select > output.txt & 
 RPID=$!
 sleep 4
 xdotool getactivewindow windowsize 100% 100%
@@ -12,11 +13,17 @@ sleep 1
 xdotool key 'Down' 
 sleep 0.4
 xdotool key Shift+Return
+xdotool key Shift+Return
 xdotool key Return
 
 #  Get result, kill xvfb
 wait ${RPID}
 RETV=$?
+if [ "${RETV}" == "139" ]
+then
+    echo "thread apply all bt" | gdb rofi core.*
+fi
+
 OUTPUT=$(cat output.txt | tr '\n' ' ')
 if [ "${OUTPUT}" != 'noot mies ' ]
 then

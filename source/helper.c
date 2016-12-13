@@ -49,10 +49,17 @@
 #include "rofi.h"
 #include "view.h"
 
-extern xcb_connection_t *xcb_connection;
-extern xcb_screen_t     *xcb_screen;
-static int              stored_argc   = 0;
-static char             **stored_argv = NULL;
+const char *const monitor_position_entries[] = {
+    "on focused monitor",
+    "on focused window",
+    "at mouse pointer",
+    "on monitor with focused window",
+    "on monitor that has mouse pointer"
+};
+/** copy of the argc for use in commandline argument parser. */
+static int        stored_argc = 0;
+/** copy of the argv pointer for use in the commandline argument parser */
+static char       **stored_argv = NULL;
 
 void cmd_set_arguments ( int argc, char **argv )
 {
@@ -136,70 +143,113 @@ int helper_parse_setup ( char * string, char ***output, int *length, ... )
     return FALSE;
 }
 
-char *token_collate_key ( const char *token, int case_sensitive )
+void tokenize_free ( GRegex ** tokens )
 {
-    char *tmp, *compk;
-
-    if ( case_sensitive ) {
-        tmp = g_strdup ( token );
+    for ( size_t i = 0; tokens && tokens[i]; i++ ) {
+        g_regex_unref ( (GRegex *) tokens[i] );
     }
-    else {
-        tmp = g_utf8_casefold ( token, -1 );
-    }
-
-    compk = g_utf8_normalize ( tmp, -1, G_NORMALIZE_ALL );
-    g_free ( tmp );
-
-    return compk;
+    g_free ( tokens );
 }
-void tokenize_free ( char ** tokens )
+
+static gchar *glob_to_regex ( const char *input )
 {
-    if ( config.glob ) {
-        for ( size_t i = 0; tokens && tokens[i]; i++ ) {
-            g_pattern_spec_free ( (GPatternSpec *) tokens[i] );
+    gchar  *r    = g_regex_escape_string ( input, -1 );
+    size_t str_l = strlen ( r );
+    for ( size_t i = 0; i < str_l; i++ ) {
+        if ( r[i] == '\\' ) {
+            if ( r[i + 1] == '*' ) {
+                r[i] = '.';
+            }
+            else if ( r[i + 1] == '?' ) {
+                r[i + 1] = 'S';
+            }
+            i++;
         }
-        g_free ( tokens );
     }
-    else if ( config.regex ) {
-        for ( size_t i = 0; tokens && tokens[i]; i++ ) {
-            g_regex_unref ( (GRegex *) tokens[i] );
-        }
-        g_free ( tokens );
-    }
-    else {
-        g_strfreev ( tokens );
-    }
+    return r;
 }
-char **tokenize ( const char *input, int case_sensitive )
+static gchar *fuzzy_to_regex ( const char * input )
+{
+    GString *str = g_string_new ( "" );
+    gchar   *r   = g_regex_escape_string ( input, -1 );
+    gchar   *iter;
+    int     first = 1;
+    for ( iter = r; iter && *iter != '\0'; iter = g_utf8_next_char ( iter ) ) {
+        if ( first ) {
+            g_string_append ( str, "(" );
+        }
+        else {
+            g_string_append ( str, ".*(" );
+        }
+        if ( *iter == '\\' ){
+            g_string_append_c ( str, '\\');
+            iter = g_utf8_next_char ( iter );
+            // If EOL, break out of for loop.
+            if ( (*iter) == '\0' ) break;
+        }
+        g_string_append_unichar ( str, g_utf8_get_char ( iter ) );
+        g_string_append ( str, ")" );
+        first = 0;
+    }
+    g_free ( r );
+    char *retv = str->str;
+    g_string_free ( str, FALSE );
+    return retv;
+}
+
+// Macro for quickly generating regex for matching.
+static inline GRegex * R ( const char *s, int case_sensitive  )
+{
+    return g_regex_new ( s, G_REGEX_OPTIMIZE | ( ( case_sensitive ) ? 0 : G_REGEX_CASELESS ), 0, NULL );
+}
+
+static GRegex * create_regex ( const char *input, int case_sensitive )
+{
+    GRegex * retv = NULL;
+    gchar  *r;
+    switch ( config.matching_method )
+    {
+    case MM_GLOB:
+        r    = glob_to_regex ( input );
+        retv = R ( r, case_sensitive );
+        g_free ( r );
+        break;
+    case MM_REGEX:
+        retv = R ( input, case_sensitive );
+        if ( retv == NULL ) {
+            r    = g_regex_escape_string ( input, -1 );
+            retv = R ( r, case_sensitive );
+            g_free ( r );
+        }
+        break;
+    case MM_FUZZY:
+        r    = fuzzy_to_regex ( input );
+        retv = R ( r, case_sensitive );
+        g_free ( r );
+        break;
+    default:
+        r    = g_regex_escape_string ( input, -1 );
+        retv = R ( r, case_sensitive );
+        g_free ( r );
+        break;
+    }
+    return retv;
+}
+GRegex **tokenize ( const char *input, int case_sensitive )
 {
     if ( input == NULL ) {
         return NULL;
     }
+    size_t len = strlen ( input );
+    if ( len == 0 ) {
+        return NULL;
+    }
 
-    char *saveptr = NULL, *token;
-    char **retv   = NULL;
+    char   *saveptr = NULL, *token;
+    GRegex **retv   = NULL;
     if ( !config.tokenize ) {
-        retv = g_malloc0 ( sizeof ( char* ) * 2 );
-        if ( config.glob ) {
-            token = g_strdup_printf ( "*%s*", input );
-            char *str = token_collate_key ( token, case_sensitive );
-            retv[0]                 = (char *) g_pattern_spec_new ( str );
-            g_free ( token ); token = NULL;
-            g_free ( str );
-        }
-        else if ( config.regex ) {
-            GRegex *reg = g_regex_new ( input, ( case_sensitive ) ? 0 : G_REGEX_CASELESS, G_REGEX_MATCH_PARTIAL, NULL );
-            if ( reg == NULL ) {
-                gchar *r = g_regex_escape_string ( input, -1 );
-                reg = g_regex_new ( r, ( case_sensitive ) ? 0 : G_REGEX_CASELESS, G_REGEX_MATCH_PARTIAL, NULL );
-                g_free ( r );
-                g_free ( retv );
-            }
-            retv[0] = (char *) reg;
-        }
-        else{
-            retv[0] = token_collate_key ( input, case_sensitive );
-        }
+        retv    = g_malloc0 ( sizeof ( GRegex* ) * 2 );
+        retv[0] = (GRegex *) create_regex ( input, case_sensitive );
         return retv;
     }
 
@@ -213,25 +263,8 @@ char **tokenize ( const char *input, int case_sensitive )
     // strtok should still be valid for utf8.
     const char * const sep = " ";
     for ( token = strtok_r ( str, sep, &saveptr ); token != NULL; token = strtok_r ( NULL, sep, &saveptr ) ) {
-        retv = g_realloc ( retv, sizeof ( char* ) * ( num_tokens + 2 ) );
-        if ( config.glob ) {
-            char *str = g_strdup_printf ( "*%s*", token );
-            char *t   = token_collate_key ( str, case_sensitive );
-            retv[num_tokens] = (char *) g_pattern_spec_new ( t );
-            g_free ( t );
-            g_free ( str );
-        }
-        else if ( config.regex ) {
-            retv[num_tokens] = (char *) g_regex_new ( token, case_sensitive ? 0 : G_REGEX_CASELESS, 0, NULL );
-            if ( retv[num_tokens] == NULL ) {
-                gchar *r = g_regex_escape_string ( input, -1 );
-                retv[num_tokens] = (char *) g_regex_new ( r, ( case_sensitive ) ? 0 : G_REGEX_CASELESS, G_REGEX_MATCH_PARTIAL, NULL );
-                g_free ( r );
-            }
-        }
-        else {
-            retv[num_tokens] = token_collate_key ( token, case_sensitive );
-        }
+        retv                 = g_realloc ( retv, sizeof ( GRegex* ) * ( num_tokens + 2 ) );
+        retv[num_tokens]     = (GRegex *) create_regex ( token, case_sensitive );
         retv[num_tokens + 1] = NULL;
         num_tokens++;
     }
@@ -285,47 +318,35 @@ int find_arg_uint ( const char * const key, unsigned int *val )
 
 char helper_parse_char ( const char *arg )
 {
-    int len = strlen ( arg );
+    const size_t len = strlen ( arg );
     // If the length is 1, it is not escaped.
     if ( len == 1 ) {
         return arg[0];
     }
     // If the length is 2 and the first character is '\', we unescape it.
     if ( len == 2 && arg[0] == '\\' ) {
+        switch ( arg[1] )
+        {
         // New line
-        if ( arg[1] == 'n' ) {
-            return '\n';
-        }
+        case 'n': return '\n';
         // Bell
-        else if ( arg[1] == 'a' ) {
-            return '\a';
-        }
+        case  'a': return '\a';
         // Backspace
-        else if ( arg[1] == 'b' ) {
-            return '\b';
-        }
+        case 'b': return '\b';
         // Tab
-        else if ( arg[1] == 't' ) {
-            return '\t';
-        }
+        case  't': return '\t';
         // Vertical tab
-        else if ( arg[1] == 'v' ) {
-            return '\v';
-        }
+        case  'v': return '\v';
         // Form feed
-        else if ( arg[1] == 'f' ) {
-            return '\f';
-        }
+        case  'f': return '\f';
         // Carriage return
-        else if ( arg[1] == 'r' ) {
-            return '\r';
-        }
+        case  'r': return '\r';
         // Forward slash
-        else if ( arg[1] == '\\' ) {
-            return '\\';
-        }
-        else if ( arg[1] == '0' ) {
-            return '\0';
+        case  '\\': return '\\';
+        // 0 line.
+        case  '0': return '\0';
+        default:
+            break;
         }
     }
     if ( len > 2 && arg[0] == '\\' && arg[1] == 'x' ) {
@@ -347,96 +368,41 @@ int find_arg_char ( const char * const key, char *val )
     return FALSE;
 }
 
-/**
- * Shared 'token_match' function.
- * Matches tokenized.
- */
-static int fuzzy_token_match ( char **tokens, const char *input, __attribute__( ( unused ) ) int not_ascii, int case_sensitive )
+PangoAttrList *token_match_get_pango_attr ( GRegex **tokens, const char *input, PangoAttrList *retv )
 {
-    int match = 1;
-
     // Do a tokenized match.
-
     if ( tokens ) {
-        char *compk = not_ascii ? token_collate_key ( input, case_sensitive ) : (char *) g_ascii_strdown ( input, -1 );
-        for ( int j = 0; match && tokens[j]; j++ ) {
-            char *t     = compk;
-            char *token = tokens[j];
-
-            while ( *t && *token ) {
-                if (  ( g_utf8_get_char ( t ) == g_utf8_get_char ( token ) ) ) {
-                    token = g_utf8_next_char ( token );
+        for ( int j = 0; tokens[j]; j++ ) {
+            GMatchInfo *gmi = NULL;
+            g_regex_match ( (GRegex *) tokens[j], input, G_REGEX_MATCH_PARTIAL, &gmi );
+            while ( g_match_info_matches ( gmi ) ) {
+                int count = g_match_info_get_match_count ( gmi );
+                for ( int index = ( count > 1 ) ? 1 : 0; index < count; index++ ) {
+                    int            start, end;
+                    g_match_info_fetch_pos ( gmi, index, &start, &end );
+                    PangoAttribute *pa  = pango_attr_underline_new ( PANGO_UNDERLINE_SINGLE );
+                    PangoAttribute *pa2 = pango_attr_weight_new ( PANGO_WEIGHT_BOLD );
+                    pa2->start_index = pa->start_index = start;
+                    pa2->end_index   = pa->end_index = end;
+                    pango_attr_list_insert ( retv, pa );
+                    pango_attr_list_insert ( retv, pa2 );
                 }
-                t = g_utf8_next_char ( t );
+                g_match_info_next ( gmi, NULL );
             }
-            match = !( *token );
+            g_match_info_free ( gmi );
         }
-        g_free ( compk );
     }
-
-    return match;
+    return retv;
 }
-static int normal_token_match ( char **tokens, const char *input, int not_ascii, int case_sensitive )
-{
-    int match = 1;
 
+int token_match ( GRegex * const *tokens, const char *input )
+{
+    int match = ( tokens != NULL );
     // Do a tokenized match.
-
-    if ( tokens ) {
-        char *compk = not_ascii ? token_collate_key ( input, case_sensitive ) : (char *) input;
-        char *( *comparison )( const char *, const char * );
-        comparison = ( case_sensitive || not_ascii ) ? strstr : strcasestr;
-        for ( int j = 0; match && tokens[j]; j++ ) {
-            match = ( comparison ( compk, tokens[j] ) != NULL );
-        }
-        if ( not_ascii ) {
-            g_free ( compk );
-        }
-    }
-
-    return match;
-}
-
-static int regex_token_match ( char **tokens, const char *input, G_GNUC_UNUSED int not_ascii, G_GNUC_UNUSED int case_sensitive )
-{
-    int match = 1;
-
-    // Do a tokenized match.
-    if ( tokens ) {
-        for ( int j = 0; match && tokens[j]; j++ ) {
-            match = g_regex_match ( (GRegex *) tokens[j], input, G_REGEX_MATCH_PARTIAL, NULL );
-        }
+    for ( int j = 0; match && tokens[j]; j++ ) {
+        match = g_regex_match ( (const GRegex *) tokens[j], input, 0, NULL );
     }
     return match;
-}
-
-static int glob_token_match ( char **tokens, const char *input, int not_ascii, int case_sensitive )
-{
-    int  match  = 1;
-    char *compk = not_ascii ? token_collate_key ( input, case_sensitive ) : g_ascii_strdown ( input, -1 );
-
-    // Do a tokenized match.
-    if ( tokens ) {
-        for ( int j = 0; match && tokens[j]; j++ ) {
-            match = g_pattern_match_string ( (GPatternSpec *) tokens[j], compk );
-        }
-    }
-    g_free ( compk );
-    return match;
-}
-
-int token_match ( char **tokens, const char *input, int not_ascii, int case_sensitive )
-{
-    if ( config.glob ) {
-        return glob_token_match ( tokens, input, not_ascii, case_sensitive );
-    }
-    else if ( config.regex ) {
-        return regex_token_match ( tokens, input, not_ascii, case_sensitive );
-    }
-    else if ( config.fuzzy ) {
-        return fuzzy_token_match ( tokens, input, not_ascii, case_sensitive );
-    }
-    return normal_token_match ( tokens, input, not_ascii, case_sensitive );
 }
 
 int execute_generator ( const char * cmd )
@@ -471,14 +437,14 @@ int create_pid_file ( const char *pidfile )
 
     int fd = g_open ( pidfile, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR );
     if ( fd < 0 ) {
-        fprintf ( stderr, "Failed to create pid file." );
+        fprintf ( stderr, "Failed to create pid file: '%s'.\n", pidfile );
         return -1;
     }
     // Set it to close the File Descriptor on exit.
     int flags = fcntl ( fd, F_GETFD, NULL );
     flags = flags | FD_CLOEXEC;
     if ( fcntl ( fd, F_SETFD, flags, NULL ) < 0 ) {
-        fprintf ( stderr, "Failed to set CLOEXEC on pidfile." );
+        fprintf ( stderr, "Failed to set CLOEXEC on pidfile.\n" );
         remove_pid_file ( fd );
         return -1;
     }
@@ -522,6 +488,27 @@ int config_sanity_check ( void )
     int     found_error = FALSE;
     GString *msg        = g_string_new (
         "<big><b>The configuration failed to validate:</b></big>\n" );
+
+    if ( config.matching ) {
+        if ( g_strcmp0 ( config.matching, "regex" ) == 0 ) {
+            config.matching_method = MM_REGEX;
+        }
+        else if ( g_strcmp0 ( config.matching, "glob" ) == 0 ) {
+            config.matching_method = MM_GLOB;
+        }
+        else if ( g_strcmp0 ( config.matching, "fuzzy" ) == 0 ) {
+            config.matching_method = MM_FUZZY;
+        }
+        else if ( g_strcmp0 ( config.matching, "normal" ) == 0 ) {
+            config.matching_method = MM_NORMAL;;
+        }
+        else {
+            g_string_append_printf ( msg, "\t<b>config.matching</b>=%s is not a valid matching strategy.\nValid options are: glob, regex, fuzzy or normal.\n",
+                                     config.matching );
+            found_error = 1;
+        }
+    }
+
     if ( config.element_height < 1 ) {
         g_string_append_printf ( msg, "\t<b>config.element_height</b>=%d is invalid. An element needs to be atleast 1 line high.\n",
                                  config.element_height );
@@ -548,25 +535,17 @@ int config_sanity_check ( void )
 
     // Check size
     {
-        int ssize = monitor_get_smallest_size ( );
-        if ( config.monitor >= 0 ) {
-            workarea mon;
-            if ( monitor_get_dimension ( config.monitor, &mon ) ) {
-                ssize = MIN ( mon.w, mon.h );
+        workarea mon;
+        if ( !monitor_active ( &mon ) ) {
+            const char *name = config.monitor;
+            if ( name && name[0] == '-' ) {
+                int index = name[1] - '0';
+                if ( index < 5 && index > 0 ) {
+                    name = monitor_position_entries[index - 1];
+                }
             }
-            else{
-                g_string_append_printf ( msg, "\t<b>config.monitor</b>=%d Could not find monitor.\n", config.monitor );
-                ssize = 0;
-            }
-        }
-        // Have todo an estimate here.
-        if ( ( 2 * ( config.padding + config.menu_bw ) ) > ( 0.9 * ssize ) ) {
-            g_string_append_printf ( msg, "\t<b>config.padding+config.menu_bw</b>=%d is too big for the minimum size of the monitor: %d.\n",
-                                     ( config.padding + config.menu_bw ), ssize );
-
-            config.padding = 0;
-            config.menu_bw = 0;
-            found_error    = TRUE;
+            g_string_append_printf ( msg, "\t<b>config.monitor</b>=%s Could not find monitor.\n", name );
+            found_error = TRUE;
         }
     }
 
@@ -583,7 +562,7 @@ int config_sanity_check ( void )
         pango_font_description_free ( pfd );
     }
 
-    if ( config.monitor == -3 ) {
+    if ( g_strcmp0 ( config.monitor, "-3" ) == 0 ) {
         // On -3, set to location 1.
         config.location   = 1;
         config.fullscreen = 0;
@@ -629,30 +608,30 @@ char *rofi_expand_path ( const char *input )
     return retv;
 }
 
+/** Return the minimum value of a,b,c */
 #define MIN3( a, b, c )    ( ( a ) < ( b ) ? ( ( a ) < ( c ) ? ( a ) : ( c ) ) : ( ( b ) < ( c ) ? ( b ) : ( c ) ) )
 
 unsigned int levenshtein ( const char *needle, const char *haystack )
 {
-    unsigned int x, y, lastdiag, olddiag;
-    size_t       needlelen   = g_utf8_strlen ( needle, -1 );
-    size_t       haystacklen = g_utf8_strlen ( haystack, -1 );
+    const size_t needlelen   = g_utf8_strlen ( needle, -1 );
+    const size_t haystacklen = g_utf8_strlen ( haystack, -1 );
     unsigned int column[needlelen + 1];
-    for ( y = 0; y <= needlelen; y++ ) {
+    for ( unsigned int y = 0; y <= needlelen; y++ ) {
         column[y] = y;
     }
-    for ( x = 1; x <= haystacklen; x++ ) {
+    for ( unsigned int x = 1; x <= haystacklen; x++ ) {
         const char *needles = needle;
         column[0] = x;
         gunichar   haystackc = g_utf8_get_char ( haystack );
         if ( !config.case_sensitive ) {
             haystackc = g_unichar_tolower ( haystackc );
         }
-        for ( y = 1, lastdiag = x - 1; y <= needlelen; y++ ) {
+        for ( unsigned int y = 1, lastdiag = x - 1; y <= needlelen; y++ ) {
             gunichar needlec = g_utf8_get_char ( needles );
             if ( !config.case_sensitive ) {
                 needlec = g_unichar_tolower ( needlec );
             }
-            olddiag   = column[y];
+            unsigned int olddiag = column[y];
             column[y] = MIN3 ( column[y] + 1, column[y - 1] + 1, lastdiag + ( needlec == haystackc ? 0 : 1 ) );
             lastdiag  = olddiag;
             needles   = g_utf8_next_char ( needles );
@@ -668,18 +647,17 @@ char * rofi_latin_to_utf8_strdup ( const char *input, gssize length )
     return g_convert_with_fallback ( input, length, "UTF-8", "latin1", "\uFFFD", NULL, &slength, NULL );
 }
 
-char * rofi_force_utf8 ( gchar *start )
+char * rofi_force_utf8 ( gchar *start, ssize_t length )
 {
     if ( start == NULL ) {
         return NULL;
     }
     const char *data = start;
     const char *end;
-    gsize      length = strlen ( data );
     GString    *string;
 
     if ( g_utf8_validate ( data, length, &end ) ) {
-        return start;
+        return g_memdup ( start, length + 1 );
     }
     string = g_string_sized_new ( length + 16 );
 
@@ -696,7 +674,5 @@ char * rofi_force_utf8 ( gchar *start )
         g_string_append_len ( string, data, length );
     }
 
-    // Free input string.
-    g_free ( start );
     return g_string_free ( string, FALSE );
 }

@@ -1,11 +1,35 @@
 #ifndef ROFI_MODE_PRIVATE_H
 #define ROFI_MODE_PRIVATE_H
 
+/**
+ * @param data Pointer to #Mode object.
+ *
+ * Mode free function.
+ */
 typedef void ( *_mode_free )( Mode *data );
 
+/**
+ * @param sw The #Mode pointer
+ * @param selected_line The selected line
+ * @param state The state to display [out]
+ * @param get_entry if it should only return the state
+ *
+ * Get the value for displaying.
+ *
+ * @return the string and state for displaying.
+ */
 typedef char * ( *_mode_get_display_value )( const Mode *sw, unsigned int selected_line, int *state, int get_entry );
 
+/**
+ * @param sw The #Mode pointer
+ * @param selected_line The selected line
+ *
+ * Obtains the string to complete.
+ *
+ * @return Get the completion string
+ */
 typedef char * ( *_mode_get_completion )( const Mode *sw, unsigned int selected_line );
+
 /**
  * @param tokens  List of (input) tokens to match.
  * @param input   The entry to match against.
@@ -17,17 +41,55 @@ typedef char * ( *_mode_get_completion )( const Mode *sw, unsigned int selected_
  *
  * @returns 1 when it matches, 0 if not.
  */
-typedef int ( *_mode_token_match )( const Mode *data, char **tokens, int not_ascii, int case_sensitive, unsigned int index );
+typedef int ( *_mode_token_match )( const Mode *data, GRegex **tokens, unsigned int index );
 
+/**
+ * @param sw The #Mode pointer
+ *
+ * Initialize the mode.
+ *
+ * @returns TRUE is successfull
+ */
 typedef int ( *__mode_init )( Mode *sw );
 
+/**
+ * @param sw The #Mode pointer
+ *
+ * Get the number of entries.
+ *
+ * @returns the number of entries
+ */
 typedef unsigned int ( *__mode_get_num_entries )( const Mode *sw );
 
+/**
+ * @param sw The #Mode pointer
+ *
+ * Destroy the current mode. Still ready to restart.
+ *
+ */
 typedef void ( *__mode_destroy )( Mode *sw );
 
+/**
+ * @param sw The #Mode pointer
+ * @param menu_retv The return value
+ * @param input The input string
+ * @param selected_line The selected line
+ *
+ * Handle the user accepting an entry.
+ *
+ * @returns the next action to take
+ */
 typedef ModeMode ( *_mode_result )( Mode *sw, int menu_retv, char **input, unsigned int selected_line );
 
-typedef int ( *_mode_is_not_ascii )( const Mode *sw, unsigned int index );
+/**
+ * @param sw The #Mode pointer
+ * @param input The input string
+ *
+ * Preprocess the input for sorting.
+ *
+ * @returns Entry stripped from markup for sorting
+ */
+typedef char* ( *_mode_preprocess_input )( Mode *sw, const char *input );
 
 /**
  * Structure defining a switcher.
@@ -50,8 +112,6 @@ struct rofi_mode
     __mode_destroy          _destroy;
     /** Get number of entries to display. (unfiltered). */
     __mode_get_num_entries  _get_num_entries;
-    /** Check if the element is ascii. */
-    _mode_is_not_ascii      _is_not_ascii;
     /** Process the result of the user selection. */
     _mode_result            _result;
     /** Token match. */
@@ -60,6 +120,8 @@ struct rofi_mode
     _mode_get_display_value _get_display_value;
     /** Get the 'completed' entry. */
     _mode_get_completion    _get_completion;
+
+    _mode_preprocess_input  _preprocess_input;
 
     /** Pointer to private data. */
     void                    *private_data;

@@ -7,7 +7,7 @@
 #include <history.h>
 #include <string.h>
 #include <xcb/xcb.h>
-#include <textbox.h>
+#include <widgets/textbox.h>
 #include <rofi.h>
 #include <cairo-xlib.h>
 #include "settings.h"
@@ -57,7 +57,7 @@ int main ( G_GNUC_UNUSED int argc, G_GNUC_UNUSED char **argv )
                                     NORMAL, "test" );
     TASSERT ( box != NULL );
 
-    textbox_cursor_end ( box );
+    textbox_keybinding ( box, MOVE_END );
     TASSERT ( box->cursor == 4 );
     textbox_cursor ( box, -1 );
     TASSERT ( box->cursor == 0 );
@@ -67,30 +67,30 @@ int main ( G_GNUC_UNUSED int argc, G_GNUC_UNUSED char **argv )
     TASSERT ( box->cursor == 2 );
     textbox_insert ( box, 3, "bo", 2 );
     TASSERT ( strcmp ( box->text, "tesbot" ) == 0 );
-    textbox_cursor_end ( box );
+    textbox_keybinding ( box, MOVE_END );
     TASSERT ( box->cursor == 6 );
 
-    TASSERT ( textbox_get_width ( box ) > 0 );
+    TASSERT ( widget_get_width ( WIDGET ( box ) ) > 0 );
     TASSERT ( textbox_get_height ( box ) > 0 );
 
-    TASSERT ( textbox_get_width ( box ) >= textbox_get_font_width ( box )  );
+    TASSERT ( widget_get_width ( WIDGET ( box ) ) >= textbox_get_font_width ( box )  );
     TASSERT ( textbox_get_height ( box ) >= textbox_get_font_height ( box )  );
 
     TASSERT ( textbox_get_estimated_char_width ( ) > 0 );
 
-    textbox_cursor_bkspc ( box );
+    textbox_keybinding ( box, REMOVE_CHAR_BACK );
     TASSERT ( strcmp ( box->text, "tesbo" ) == 0 );
     TASSERT ( box->cursor == 5 );
 
-    textbox_cursor_dec ( box );
+    textbox_keybinding ( box, MOVE_CHAR_BACK );
     TASSERT ( box->cursor == 4 );
-    textbox_cursor_del ( box );
+    textbox_keybinding ( box, REMOVE_CHAR_FORWARD );
     TASSERT ( strcmp ( box->text, "tesb" ) == 0 );
-    textbox_cursor_dec ( box );
+    textbox_keybinding ( box, MOVE_CHAR_BACK );
     TASSERT ( box->cursor == 3 );
-    textbox_cursor_inc ( box );
+    textbox_keybinding ( box, MOVE_CHAR_FORWARD );
     TASSERT ( box->cursor == 4 );
-    textbox_cursor_inc ( box );
+    textbox_keybinding ( box, MOVE_CHAR_FORWARD );
     TASSERT ( box->cursor == 4 );
     // Cursor after delete section.
     textbox_delete ( box, 0, 1 );
@@ -122,6 +122,32 @@ int main ( G_GNUC_UNUSED int argc, G_GNUC_UNUSED char **argv )
     TASSERT ( strcmp ( box->text, "aapmies" ) == 0 );
     TASSERT ( box->cursor == 5 );
 
+    textbox_text ( box, "aap noot mies" );
+    textbox_cursor ( box, 8 );
+    textbox_keybinding ( box, REMOVE_WORD_BACK );
+    TASSERT ( box->cursor == 4 );
+    TASSERT (  strcmp ( box->text, "aap  mies" ) == 0 );
+    textbox_keybinding ( box, REMOVE_TO_EOL );
+    TASSERT ( box->cursor == 4 );
+    TASSERT (  strcmp ( box->text, "aap " ) == 0 );
+    textbox_text ( box, "aap noot mies" );
+    textbox_cursor ( box, 8 );
+    textbox_keybinding ( box, REMOVE_WORD_FORWARD );
+    TASSERT (  strcmp ( box->text, "aap noot" ) == 0 );
+    textbox_keybinding ( box, MOVE_FRONT );
+    TASSERT ( box->cursor == 0 );
+    textbox_keybinding ( box, CLEAR_LINE );
+    TASSERT (  strcmp ( box->text, "" ) == 0 );
+    textbox_text ( box, "aap noot mies" );
+    textbox_keybinding ( box, MOVE_END );
+    textbox_keybinding ( box, MOVE_WORD_BACK );
+    TASSERT ( box->cursor == 9 );
+    textbox_keybinding ( box, MOVE_WORD_BACK );
+    TASSERT ( box->cursor == 4 );
+    textbox_keybinding ( box, REMOVE_TO_SOL );
+    TASSERT (  strcmp ( box->text, "noot mies" ) == 0 );
+    TASSERT ( box->cursor == 0 );
+
     textbox_font ( box, HIGHLIGHT );
     //textbox_draw ( box, draw );
 
@@ -129,6 +155,6 @@ int main ( G_GNUC_UNUSED int argc, G_GNUC_UNUSED char **argv )
     TASSERT ( box->widget.x == 12 );
     TASSERT ( box->widget.y == 13 );
 
-    textbox_free ( box );
+    widget_free ( WIDGET ( box ) );
     textbox_cleanup ( );
 }

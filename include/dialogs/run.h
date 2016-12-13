@@ -6,12 +6,13 @@
  * @ingroup MODES
  *
  * This mode uses the following options from the #config object:
- *  * #_Settings::run_command
- *  * #_Settings::run_shell_command
- *  * #_Settings::run_list_command
+ *  * #Settings::run_command
+ *  * #Settings::run_shell_command
+ *  * #Settings::run_list_command
  *
  * @{
  */
+/** #Mode object representing the run dialog. */
 extern Mode run_mode;
 
 /*@}*/

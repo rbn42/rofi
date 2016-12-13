@@ -1,13 +1,27 @@
 #ifndef ROFI_SETTINGS_H
 #define ROFI_SETTINGS_H
 
+#include <glib.h>
+
+/**
+ * Enumeration indicating the matching method to use.
+ *
+ * @ingroup CONFIGURATION
+ */
+typedef enum
+{
+    MM_NORMAL = 0,
+    MM_REGEX  = 1,
+    MM_GLOB   = 2,
+    MM_FUZZY  = 3
+} MatchingMethod;
+
 /**
  * Enumeration indicating location or gravity of window.
  *
  * \verbatim WL_NORTH_WEST      WL_NORTH      WL_NORTH_EAST \endverbatim
  * \verbatim WL_EAST            WL_CENTER     WL_EAST \endverbatim
  * \verbatim WL_SOUTH_WEST      WL_SOUTH      WL_SOUTH_EAST\endverbatim
- * \endverbatim
  *
  * @ingroup CONFIGURATION
  */
@@ -41,8 +55,6 @@ typedef struct
 {
     /** List of enabled modi */
     char           *modi;
-    /** Window settings */
-    unsigned int   window_opacity;
     /** Border width */
     unsigned int   menu_bw;
     /** Width (0-100 in %, > 100 in pixels, < 0 in char width.) */
@@ -71,6 +83,8 @@ typedef struct
     char           * run_shell_command;
     /** Command for listing executables */
     char           * run_list_command;
+    /** Command for window */
+    char           * window_command;
 
     /** Windows location/gravity */
     WindowLocation location;
@@ -88,6 +102,8 @@ typedef struct
     unsigned int   levenshtein_sort;
     /** Search case sensitivity */
     unsigned int   case_sensitive;
+    /** Cycle through in the element list */
+    unsigned int   cycle;
     /** Height of an element in number of rows */
     int            element_height;
     /** Sidebar mode, show the modi */
@@ -102,15 +118,14 @@ typedef struct
     unsigned int   parse_known_hosts;
     /** Combi Modes */
     char           *combi_modi;
-    /** Fuzzy match */
-    unsigned int   fuzzy;
-    unsigned int   glob;
+    char           *matching;
+    MatchingMethod matching_method;
     unsigned int   tokenize;
-    unsigned int   regex;
     /** Monitors */
-    int            monitor;
+    char           *monitor;
     /** Line margin */
     unsigned int   line_margin;
+    unsigned int   line_padding;
     /** filter */
     char           *filter;
     /** style */
@@ -129,6 +144,11 @@ typedef struct
     unsigned int   scroll_method;
     /** Background type */
     char           *fake_background;
+
+    char           *window_format;
+    /** Click outside the window to exit */
+    int            click_to_exit;
+    gboolean       show_match;
 } Settings;
 /** Global Settings structure. */
 extern Settings config;

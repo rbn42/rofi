@@ -24,12 +24,15 @@ typedef enum
     MENU_NORMAL_WINDOW = 2,
     /** ERROR dialog */
     MENU_ERROR_DIALOG  = 4,
+    /** INDICATOR */
+    MENU_INDICATOR     = 8,
+    /** Show column */
+    MENU_PROMPT_COLON  = 16,
 } MenuFlags;
 
 /**
  * @param sw the Mode to show.
  * @param input A pointer to a string where the inputted data is placed.
- * @param prompt The prompt to show.
  * @param message Extra message to display.
  * @param flags   Flags indicating state of the menu.
  * @param finalize the finailze callback
@@ -38,9 +41,7 @@ typedef enum
  *
  * @returns The command issued (see MenuReturn)
  */
-RofiViewState *rofi_view_create ( Mode *sw, const char *input, char *prompt, const char *message, MenuFlags flags, void ( *finalize )(
-                                      RofiViewState * ) )
-__attribute__ ( ( nonnull ( 1, 2, 3, 6 ) ) );
+RofiViewState *rofi_view_create ( Mode *sw, const char *input, const char *message, MenuFlags flags, void ( *finalize )( RofiViewState * ) ) __attribute__ ( ( nonnull ( 1, 2, 5 ) ) );
 
 /**
  * @param state The Menu Handle
@@ -49,10 +50,41 @@ __attribute__ ( ( nonnull ( 1, 2, 3, 6 ) ) );
  */
 void rofi_view_finalize ( RofiViewState *state );
 
+/**
+ * @param state the Menu handle
+ *
+ * Get the return value associated to the users action.
+ *
+ * @returns the return value
+ */
 MenuReturn rofi_view_get_return_value ( const RofiViewState *state );
+/**
+ * @param state the Menu handle
+ *
+ * Returns the index of the next visible position.
+ *
+ * @return the next position.
+ */
 unsigned int rofi_view_get_next_position ( const RofiViewState *state );
+/**
+ * @param state the Menu handle
+ * @param event the event to handle
+ * @param xkb  the keyboard handle
+ *
+ * Process an Xevent.
+ */
 void rofi_view_itterrate ( RofiViewState *state, xcb_generic_event_t *event, xkb_stuff *xkb );
+/**
+ * @param state the Menu handle
+ *
+ * @returns returns if this state is completed.
+ */
 unsigned int rofi_view_get_completed ( const RofiViewState *state );
+/**
+ * @param state the Menu handle
+ *
+ * @returns the raw user input.
+ */
 const char * rofi_view_get_user_input ( const RofiViewState *state );
 
 /**
@@ -86,6 +118,12 @@ void rofi_view_restart ( RofiViewState *state );
  */
 void rofi_view_update ( RofiViewState *state );
 
+/**
+ * @param state The handle to the view
+ * @param action The keyboard action
+ *
+ * @returns TRUE if action was handled.
+ */
 gboolean rofi_view_trigger_action ( RofiViewState *state, KeyBindingAction action );
 
 /**
@@ -139,8 +177,60 @@ void rofi_view_queue_redraw ( void );
  */
 void rofi_view_cleanup ( void );
 
+/**
+ * @param state The handle to the view
+ *
+ * Get the mode currently displayed by the view.
+ *
+ * @returns the mode currently displayed by the view
+ */
 Mode * rofi_view_get_mode ( RofiViewState *state );
+
+/**
+ * Unmap the current view.
+ */
+void rofi_view_hide ( void );
+
+/**
+ * Indicate the current view needs to reload its data.
+ * This can only be done when *more* information is available.
+ *
+ * The reloading happens 'lazy', multiple calls might be handled at once.
+ */
+void rofi_view_reload ( void  );
+
+/**
+ * @param state The handle to the view
+ * @param mode The new mode to display
+ *
+ * Change the current view to show a different mode.
+ */
+void rofi_view_switch_mode ( RofiViewState *state, Mode *mode );
+
+/**
+ * @param state The handle to the view
+ * @param text An UTF-8 encoded character array with the text to overlay.
+ *
+ * Overlays text over the current view. Passing NULL for text hides the overlay.
+ */
+void rofi_view_set_overlay ( RofiViewState *state, const char *text );
+
+/**
+ * @param state The handle to the view.
+ *
+ * Clears the user entry box, set selected to 0.
+ */
+void rofi_view_clear_input ( RofiViewState *state );
+
+/**
+ * @param menu_flags The state of the new window.
+ *
+ * Creates the internal 'Cached' window that gets reused between views.
+ * TODO: Internal call to view exposed.
+ */
+void __create_window ( MenuFlags menu_flags );
 /** @} */
+
 /***
  * @defgroup ViewThreadPool ViewThreadPool
  * @ingroup View
@@ -150,9 +240,19 @@ Mode * rofi_view_get_mode ( RofiViewState *state );
  *
  * @{
  */
+/**
+ * Initialize the threadpool
+ */
 void rofi_view_workers_initialize ( void );
+/**
+ * Stop all threads and free the resources used by the threadpool
+ */
 void rofi_view_workers_finalize ( void );
-
-void __create_window ( MenuFlags menu_flags );
+/**
+ * Get the handle of the main window.
+ *
+ * @returns the xcb_window_t for rofi's view or XCB_WINDOW_NONE.
+ */
+xcb_window_t rofi_view_get_window ( void );
 /**@}*/
 #endif

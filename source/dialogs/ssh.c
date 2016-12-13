@@ -289,15 +289,16 @@ static char ** get_ssh (  unsigned int *length )
     fd   = fopen ( path, "r" );
 
     if ( fd != NULL ) {
-        char   *buffer       = NULL;
-        size_t buffer_length = 0;
+        char   *buffer         = NULL;
+        size_t buffer_length   = 0;
+        char   *strtok_pointer = NULL;
         while ( getline ( &buffer, &buffer_length, fd ) > 0 ) {
             // Each line is either empty, a comment line starting with a '#'
             // character or of the form "keyword [=] arguments", where there may
             // be multiple (possibly quoted) arguments separated by whitespace.
             // The keyword is separated from its arguments by whitespace OR by
             // optional whitespace and a '=' character.
-            char *token = strtok ( buffer, SSH_TOKEN_DELIM );
+            char *token = strtok_r ( buffer, SSH_TOKEN_DELIM, &strtok_pointer );
 
             // Skip empty lines and comment lines. Also skip lines where the
             // keyword is not "Host".
@@ -310,7 +311,7 @@ static char ** get_ssh (  unsigned int *length )
             // by whitespace; while host names may be quoted with double quotes
             // to represent host names containing spaces, we don't support this
             // (how many host names contain spaces?).
-            while ( ( token = strtok ( NULL, SSH_TOKEN_DELIM ) ) ) {
+            while ( ( token = strtok_r ( NULL, SSH_TOKEN_DELIM, &strtok_pointer ) ) ) {
                 // We do not want to show wildcard entries, as you cannot ssh to them.
                 const char *const sep = "*?";
                 if ( *token == '!' || strpbrk ( token, sep ) ) {
@@ -473,34 +474,17 @@ static char *_get_display_value ( const Mode *sw, unsigned int selected_line, G_
 /**
  * @param sw Object handle to the SSH Mode object
  * @param tokens The set of tokens to match against
- * @param not_ascii If the entry is pure-ascii
- * @param case_sensitive If the entry should be matched case sensitive
  * @param index The index of the entry to match
  *
  * Match entry against the set of tokens.
  *
  * @returns TRUE if matches
  */
-static int ssh_token_match ( const Mode *sw, char **tokens, int not_ascii, int case_sensitive, unsigned int index )
+static int ssh_token_match ( const Mode *sw, GRegex **tokens, unsigned int index )
 {
     SSHModePrivateData *rmpd = (SSHModePrivateData *) mode_get_private_data ( sw );
-    return token_match ( tokens, rmpd->hosts_list[index], not_ascii, case_sensitive );
+    return token_match ( tokens, rmpd->hosts_list[index] );
 }
-
-/**
- * @param sw Object handle to the SSH Mode object
- * @param index The index of the entry to match
- *
- * Check if the selected entry contains non-ascii symbols.
- *
- * @returns TRUE if string contains non-ascii symbols
- */
-static int ssh_is_not_ascii ( const Mode *sw, unsigned int index )
-{
-    SSHModePrivateData *rmpd = (SSHModePrivateData *) mode_get_private_data ( sw );
-    return !g_str_is_ascii ( rmpd->hosts_list[index] );
-}
-
 #include "mode-private.h"
 Mode ssh_mode =
 {
@@ -513,7 +497,7 @@ Mode ssh_mode =
     ._token_match       = ssh_token_match,
     ._get_display_value = _get_display_value,
     ._get_completion    = NULL,
-    ._is_not_ascii      = ssh_is_not_ascii,
+    ._preprocess_input  = NULL,
     .private_data       = NULL,
     .free               = NULL
 };

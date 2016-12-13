@@ -1,210 +1,222 @@
-! Enabled modi
+! "Enabled modi" Set from: File
 rofi.modi:                           combi,drun
-! Window opacity
-rofi.opacity:                        100
-! Window width
+! "Window width" Set from: File
 rofi.width:                          50
-! Number of lines
+! "Number of lines" Set from: File
 rofi.lines:                          8
-! Number of columns
+! "Number of columns" Set from: File
 rofi.columns:                        1
-! Font to use
+! "Font to use" Set from: File
 rofi.font:                           Source Code Pro Medium 10
-! Color scheme for normal row
+! "Color scheme for normal row" Set from: File
 rofi.color-normal:                   argb:0000000, #a2b5df, argb:3affffff, #a2b5df, #02143f
-! Color scheme for urgent row
+! "Color scheme for urgent row" Set from: File
 rofi.color-urgent:                   argb:0000000, #ff817f, argb:3affffff, #ff817f, #02143f
-! Color scheme for active row
+! "Color scheme for active row" Set from: File
 rofi.color-active:                   argb:0000000, #6aa4ff, argb:3affffff, #6aa4ff, #02143f
-! Color scheme window
+! "Color scheme window" Set from: File
 rofi.color-window:                   argb:ee02143f, #a2b5df, #a2b5df
-! Border width
+! "Border width" Set from: File
 rofi.bw:                             2
-! Location on screen
+! "Location on screen" Set from: File
 rofi.location:                       2
-! Padding
+! "Padding" Set from: File
 rofi.padding:                        2
-! Y-offset relative to location
+! "Y-offset relative to location" Set from: File
 rofi.yoffset:                        -2
-! X-offset relative to location
+! "X-offset relative to location" Set from: File
 rofi.xoffset:                        0
-! Always show number of lines
+! "Always show number of lines" Set from: File
 rofi.fixed-num-lines:                true
-! Terminal to use
+! "Terminal to use" Set from: File
 rofi.terminal:                       sakura
-! Ssh client to use
+! "Ssh client to use" Set from: File
 rofi.ssh-client:                     ssh
-! Ssh command to execute
+! "Ssh command to execute" Set from: File
 rofi.ssh-command:                    {terminal} -e {ssh-client} {host}
-! Run command to execute
+! "Run command to execute" Set from: File
 rofi.run-command:                    bash -c "{cmd}"
-! Command to get extra run targets
-rofi.run-list-command:               
-! Run command to execute that runs in shell
+! "Command to get extra run targets" Set from: Default
+! rofi.run-list-command:               
+! "Run command to execute that runs in shell" Set from: File
 rofi.run-shell-command:              {terminal} -e {cmd}
-! Disable history in run/ssh
+! "Command executed on accep-entry-custom for window modus" Set from: File
+rofi.window-command:                 xkill -id {window}
+! "Disable history in run/ssh" Set from: File
 rofi.disable-history:                false
-! Use levenshtein sorting
+! "Use levenshtein sorting" Set from: File
 rofi.levenshtein-sort:               false
-! Set case-sensitivity
+! "Set case-sensitivity" Set from: File
 rofi.case-sensitive:                 false
-! Enable sidebar-mode
+! "Cycle through the results list" Set from: File
+rofi.cycle:                          true
+! "Enable sidebar-mode" Set from: File
 rofi.sidebar-mode:                   false
-! Row height (in chars)
+! "Row height (in chars)" Set from: File
 rofi.eh:                             1
-! Enable auto select mode
+! "Enable auto select mode" Set from: File
 rofi.auto-select:                    false
-! Parse hosts file for ssh mode
+! "Parse hosts file for ssh mode" Set from: File
 rofi.parse-hosts:                    false
-! Parse known_hosts file for ssh mode
+! "Parse known_hosts file for ssh mode" Set from: File
 rofi.parse-known-hosts:              true
-! Set the modi to combine in combi mode
+! "Set the modi to combine in combi mode" Set from: File
 rofi.combi-modi:                     window,drun,run,ssh
-! Do a more fuzzy matching
-rofi.fuzzy:                          false
-! Use glob matching
-rofi.glob:                           false
-! Use regex matching
-rofi.regex:                          false
-! Tokenize input string
+! "Set the matching algorithm. (normal, regex, glob, fuzzy)" Set from: Default
+! rofi.matching:                       normal
+! "Tokenize input string" Set from: File
 rofi.tokenize:                       true
-! Monitor id to show on
+! "Monitor id to show on" Set from: File
 rofi.m:                              -1
-! Margin between rows
+! "Margin between rows" Set from: File
 rofi.line-margin:                    3
-! Pre-set filter
-rofi.filter:                         
-! Separator style (none, dash, solid)
+! "Padding within rows" Set from: Default
+! rofi.line-padding:                   1
+! "Pre-set filter" Set from: Default
+! rofi.filter:                         
+! "Separator style (none, dash, solid)" Set from: File
 rofi.separator-style:                solid
-! Hide scroll-bar
+! "Hide scroll-bar" Set from: File
 rofi.hide-scrollbar:                 false
-! Fullscreen
+! "Fullscreen" Set from: File
 rofi.fullscreen:                     false
-! Fake transparency
+! "Fake transparency" Set from: File
 rofi.fake-transparency:              false
-! DPI
+! "DPI" Set from: File
 rofi.dpi:                            101
-! Threads to use for string matching
+! "Threads to use for string matching" Set from: File
 rofi.threads:                        8
-! Scrollbar width
+! "Scrollbar width" Set from: File
 rofi.scrollbar-width:                8
-! Scrolling method. (0: Page, 1: Centered)
+! "Scrolling method. (0: Page, 1: Centered)" Set from: File
 rofi.scroll-method:                  0
-! Background to use for fake transparency. (background or screenshot)
+! "Background to use for fake transparency. (background or screenshot)" Set from: File
 rofi.fake-background:                screenshot
-! Pidfile location
-rofi.pid:                            /tmp/1000-runtime-dir/rofi.pid
-! Keybinding
+! "Window Format. w (desktop name), t (title), n (name), r (role), c (class)" Set from: File
+rofi.window-format:                  w   c   t
+! "Click outside the window to exit" Set from: Default
+! rofi.click-to-exit:                  true
+! "Indicate how it match by underlining it." Set from: Default
+! rofi.show-match:                     true
+! "Pidfile location" Set from: File
+rofi.pid:                            /tmp/rofi.pid
+! "Paste primary selection" Set from: File
 rofi.kb-primary-paste:               Control+Shift+v,Shift+Insert
-! Keybinding
+! "Paste clipboard" Set from: File
 rofi.kb-secondary-paste:             Control+v,Insert
-! Keybinding
+! "Clear input line" Set from: File
 rofi.kb-clear-line:                  Control+u
-! Keybinding
+! "Beginning of line" Set from: File
 rofi.kb-move-front:                  Control+a
-! Keybinding
+! "End of line" Set from: File
 rofi.kb-move-end:                    Control+e
-! Keybinding
+! "Move back one word" Set from: File
 rofi.kb-move-word-back:              Alt+b
-! Keybinding
+! "Move forward one word" Set from: File
 rofi.kb-move-word-forward:           Alt+f
-! Keybinding
+! "Move back one char" Set from: File
 rofi.kb-move-char-back:              Left,Control+b
-! Keybinding
+! "Move forward one char" Set from: File
 rofi.kb-move-char-forward:           Right,Control+f
-! Keybinding
-rofi.kb-remove-word-back:            Control+Alt+h
-! Keybinding
+! "Delete previous word" Set from: File
+rofi.kb-remove-word-back:            Control+Alt+h,Control+BackSpace
+! "Delete next word" Set from: File
 rofi.kb-remove-word-forward:         Control+Alt+d
-! Keybinding
+! "Delete next char" Set from: File
 rofi.kb-remove-char-forward:         Delete,Control+d
-! Keybinding
+! "Delete previous char" Set from: File
 rofi.kb-remove-char-back:            BackSpace,Control+h
-! Keybinding
+! "Delete till the end of line" Set from: File
+rofi.kb-remove-to-eol:               Control+k
+! "Delete till the start of line" Set from: File
+rofi.kb-remove-to-sol:               Control+u
+! "Accept entry" Set from: File
 rofi.kb-accept-entry:                Control+j,Control+m,Return,KP_Enter
-! Keybinding
-rofi.kb-accept-custom:               Control+Return,Shift+Return
-! Keybinding
-rofi.kb-mode-next:                   Shift+Right,Control+Tab
-! Keybinding
-rofi.kb-mode-previous:               Shift+Left,Control+Shift+Tab
-! Keybinding
-rofi.kb-toggle-case-sensitivity:     grave,dead_grave
-! Keybinding
+! "Use entered text as command (in ssh/run modi)" Set from: File
+rofi.kb-accept-custom:               Control+Return
+! "Use alternate accept command." Set from: File
+rofi.kb-accept-alt:                  Shift+Return
+! "Delete entry from history" Set from: File
 rofi.kb-delete-entry:                Shift+Delete
-! Keybinding
+! "Switch to the next mode." Set from: File
+rofi.kb-mode-next:                   Shift+Right,Control+Tab
+! "Switch to the previous mode." Set from: File
+rofi.kb-mode-previous:               Shift+Left,Control+Shift+Tab
+! "Go to the previous column" Set from: File
 rofi.kb-row-left:                    Control+Page_Up
-! Keybinding
+! "Go to the next column" Set from: File
 rofi.kb-row-right:                   Control+Page_Down
-! Keybinding
+! "Select previous entry" Set from: File
 rofi.kb-row-up:                      Up,Control+p,Shift+Tab
-! Keybinding
+! "Select next entry" Set from: File
 rofi.kb-row-down:                    Down,Control+n
-! Keybinding
+! "Go to next row, if one left, accept it, if no left next mode." Set from: File
 rofi.kb-row-tab:                     Tab
-! Keybinding
+! "Go to the previous page" Set from: File
 rofi.kb-page-prev:                   Page_Up
-! Keybinding
+! "Go to the next page" Set from: File
 rofi.kb-page-next:                   Page_Down
-! Keybinding
+! "Go to the first entry" Set from: File
 rofi.kb-row-first:                   Home,KP_Home
-! Keybinding
+! "Go to the last entry" Set from: File
 rofi.kb-row-last:                    End,KP_End
-! Keybinding
+! "Set selected item as input text" Set from: File
 rofi.kb-row-select:                  Control+space
-! Keybinding
-rofi.kb-cancel:                      Escape,Control+bracketleft
-! Keybinding
-rofi.kb-custom-1:                    Alt+1
-! Keybinding
-rofi.kb-custom-2:                    Alt+2
-! Keybinding
-rofi.kb-custom-3:                    Alt+3
-! Keybinding
-rofi.kb-custom-4:                    Alt+4
-! Keybinding
-rofi.kb-custom-5:                    Alt+5
-! Keybinding
-rofi.kb-custom-6:                    Alt+6
-! Keybinding
-rofi.kb-custom-7:                    Alt+7
-! Keybinding
-rofi.kb-custom-8:                    Alt+8
-! Keybinding
-rofi.kb-custom-9:                    Alt+9
-! Keybinding
-rofi.kb-custom-10:                   Alt+0
-! Keybinding
-rofi.kb-custom-11:                   Alt+Shift+1
-! Keybinding
-rofi.kb-custom-12:                   Alt+Shift+2
-! Keybinding
-rofi.kb-custom-13:                   Alt+Shift+3
-! Keybinding
-rofi.kb-custom-14:                   Alt+Shift+4
-! Keybinding
-rofi.kb-custom-15:                   Alt+Shift+5
-! Keybinding
-rofi.kb-custom-16:                   Alt+Shift+6
-! Keybinding
-rofi.kb-custom-18:                   Alt+Shift+8
-! Keybinding
-rofi.kb-custom-17:                   Alt+Shift+7
-! Keybinding
-rofi.kb-custom-19:                   Alt+Shift+9
-! Keybinding
-rofi.kb-screenshot:                  Alt+Shift+S
-! Keybinding
+! "Take a screenshot of the rofi window" Set from: File
+rofi.kb-screenshot:                  Alt+S
+! "Toggle case sensitivity" Set from: File
+rofi.kb-toggle-case-sensitivity:     grave,dead_grave
+! "Toggle sort" Set from: File
 rofi.kb-toggle-sort:                 Alt+grave
-! The display name of this browser
-rofi.display-ssh:                     
-! The display name of this browser
-rofi.display-run:                     
-! The display name of this browser
-rofi.display-drun:                    
-! The display name of this browser
-rofi.display-window:                  
-! The display name of this browser
-rofi.display-windowcd:               (windowcd)
-! The display name of this browser
-rofi.display-combi:                  (combi)
+! "Quit rofi" Set from: File
+rofi.kb-cancel:                      Escape,Control+bracketleft
+! "Custom keybinding 1" Set from: File
+rofi.kb-custom-1:                    Alt+1
+! "Custom keybinding 2" Set from: File
+rofi.kb-custom-2:                    Alt+2
+! "Custom keybinding 3" Set from: File
+rofi.kb-custom-3:                    Alt+3
+! "Custom keybinding 4" Set from: File
+rofi.kb-custom-4:                    Alt+4
+! "Custom Keybinding 5" Set from: File
+rofi.kb-custom-5:                    Alt+5
+! "Custom keybinding 6" Set from: File
+rofi.kb-custom-6:                    Alt+6
+! "Custom Keybinding 7" Set from: File
+rofi.kb-custom-7:                    Alt+7
+! "Custom keybinding 8" Set from: File
+rofi.kb-custom-8:                    Alt+8
+! "Custom keybinding 9" Set from: File
+rofi.kb-custom-9:                    Alt+9
+! "Custom keybinding 10" Set from: File
+rofi.kb-custom-10:                   Alt+0
+! "Custom keybinding 11" Set from: File
+rofi.kb-custom-11:                   Alt+Shift+1
+! "Custom keybinding 12" Set from: File
+rofi.kb-custom-12:                   Alt+at
+! "Csutom keybinding 13" Set from: File
+rofi.kb-custom-13:                   Alt+numbersign
+! "Custom keybinding 14" Set from: File
+rofi.kb-custom-14:                   Alt+dollar
+! "Custom keybinding 15" Set from: File
+rofi.kb-custom-15:                   Alt+percent
+! "Custom keybinding 16" Set from: File
+rofi.kb-custom-16:                   Alt+dead_circumflex
+! "Custom keybinding 17" Set from: File
+rofi.kb-custom-17:                   Alt+ampersand
+! "Custom keybinding 18" Set from: File
+rofi.kb-custom-18:                   Alt+asterisk
+! "Custom Keybinding 19" Set from: File
+rofi.kb-custom-19:                   Alt+parenleft
+! "The display name of this browser" Set from: File
+rofi.display-ssh:                    
+! "The display name of this browser" Set from: File
+rofi.display-run:                    
+! "The display name of this browser" Set from: File
+rofi.display-drun:                   
+! "The display name of this browser" Set from: File
+rofi.display-window:                 
+! "The display name of this browser" Set from: File
+rofi.display-windowcd:               windowcd
+! "The display name of this browser" Set from: File
+rofi.display-combi:                  combi

@@ -7,6 +7,9 @@
  * @{
  */
 
+/**
+ * List of all possible actions that can be triggered by a keybinding.
+ */
 typedef enum
 {
     /** Paste from primary clipboard */
@@ -35,8 +38,13 @@ typedef enum
     REMOVE_CHAR_FORWARD,
     /** Remove previous character */
     REMOVE_CHAR_BACK,
+    /** Remove till EOL */
+    REMOVE_TO_EOL,
+    /** Remove till SOL */
+    REMOVE_TO_SOL,
     /** Accept the current selected entry */
     ACCEPT_ENTRY,
+    ACCEPT_ALT,
     ACCEPT_CUSTOM,
     MODE_NEXT,
     MODE_PREVIOUS,
@@ -100,6 +108,9 @@ void cleanup_abe ( void );
  */
 KeyBindingAction abe_find_action ( unsigned int mask, xkb_keysym_t key );
 
+/**
+ * Trigger keybinding on key release.
+ */
 void abe_trigger_release ( void );
 
 /*@}*/

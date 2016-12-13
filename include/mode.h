@@ -7,6 +7,11 @@
  * The 'object' that makes a mode in rofi.
  * @{
  */
+
+/**
+ * Type of a mode.
+ * Access should be done via mode_* functions.
+ */
 typedef struct rofi_mode   Mode;
 
 /**
@@ -21,7 +26,9 @@ typedef enum
     /** Reload current DIALOG */
     RELOAD_DIALOG   = 1002,
     /** Previous dialog */
-    PREVIOUS_DIALOG = 1003
+    PREVIOUS_DIALOG = 1003,
+    /** Reloads the dialog and unset user input */
+    RESET_DIALOG    = 1004,
 } ModeMode;
 
 /**
@@ -66,7 +73,7 @@ int mode_init ( Mode *mode );
 void mode_destroy ( Mode *mode );
 
 /**
- * @param mode The mode to query
+ * @param sw The mode to query
  *
  * Get the number of entries in the mode.
  *
@@ -98,18 +105,8 @@ char * mode_get_completion ( const Mode *mode, unsigned int selected_line );
 
 /**
  * @param mode The mode to query
- * @param selected_line The entry to query
- *
- * Check if the entry has non-ascii characters.
- *
- * @returns TRUE when selected line has non-ascii characters.
- */
-int mode_is_not_ascii ( const Mode *mode, unsigned int selected_line );
-
-/**
- * @param mode The mode to query
- * @param mretv The menu return value.
- * @param input Pointer to the user input string.
+ * @param menu_retv The menu return value.
+ * @param input Pointer to the user input string. [in][out]
  * @param selected_line the line selected by the user.
  *
  * Acts on the user interaction.
@@ -121,15 +118,13 @@ ModeMode mode_result ( Mode *mode, int menu_retv, char **input, unsigned int sel
 /**
  * @param mode The mode to query
  * @param tokens The set of tokens to match against
- * @param not_ascii If the entry is pure-ascii
- * @param case_sensitive If the entry should be matched case sensitive
  * @param selected_line The index of the entry to match
  *
  * Match entry against the set of tokens.
  *
  * @returns TRUE if matches
  */
-int mode_token_match ( const Mode *mode, char **tokens, int not_ascii, int case_sensitive, unsigned int selected_line );
+int mode_token_match ( const Mode *mode, GRegex **tokens, unsigned int selected_line );
 
 /**
  * @param mode The mode to query
@@ -157,14 +152,38 @@ void *mode_get_private_data ( const Mode *mode );
 
 /**
  * @param mode The mode to query
+ * @param pd   Pointer to private data to attach to the mode.
  *
  * Helper functions for mode.
  * Set the private data object.
  */
 void mode_set_private_data ( Mode *mode, void *pd );
 
+/**
+ * @param mode The mode to query
+ *
+ * Get the name of the mode as it should be presented to the user.
+ *
+ * @return the user visible name of the mode
+ */
 const char *mode_get_display_name ( const Mode *mode );
 
+/**
+ * @param mode The mode to query
+ *
+ * Should be called once for each mode. This adds the display-name configuration option for the mode.
+ */
 void mode_set_config ( Mode *mode );
+
+/**
+ * @param mode The mode to query
+ * @param input The input to process
+ *
+ * This processes the input so it can be used for matching and sorting.
+ * This includes removing pango markup.
+ *
+ * @returns a newly allocated string
+ */
+char * mode_preprocess_input ( Mode *mode, const char *input );
 /*@}*/
 #endif

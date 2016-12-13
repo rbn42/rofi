@@ -33,10 +33,6 @@ Settings config = {
     /** List of enabled modi. */
     /** -modi */
     .modi              = "window,run,ssh",
-    /** Set the default window opacity. */
-    /** This option only works when running a composite manager. */
-    /** -o */
-    .window_opacity    =                                       100,
     /** Border width around the window. */
     .menu_bw           =                                         1,
     /** The width of the switcher. (0100 in % > 100 in pixels) */
@@ -66,6 +62,8 @@ Settings config = {
     .run_list_command  = "",
     /** Command executed when running application in terminal */
     .run_shell_command = "{terminal} -e {cmd}",
+    /** Command executed on accep-entry-custom for window modus */
+    .window_command    = "xkill -id {window}",
     /**
      * Location of the window.
      * Enumeration indicating location or gravity of window.
@@ -84,14 +82,16 @@ Settings config = {
     .y_offset          =                                         0,
     /** X offset */
     .x_offset          =                                         0,
-    /** Always should config.menu_lines lines, even if less lines are available */
-    .fixed_num_lines   = FALSE,
+    /** Always show config.menu_lines lines, even if less lines are available */
+    .fixed_num_lines   = TRUE,
     /** Do not use history */
     .disable_history   = FALSE,
     /** Use levenshtein sorting when matching */
     .levenshtein_sort  = FALSE,
     /** Case sensitivity of the search */
     .case_sensitive    = FALSE,
+    /** Cycle through in the element list */
+    .cycle             = TRUE,
     /** Height of an element in #chars */
     .element_height    =                                         1,
     /** Sidebar mode, show the modi */
@@ -103,16 +103,15 @@ Settings config = {
     /** Parse ~/.ssh/known_hosts file in ssh view. */
     .parse_known_hosts = TRUE,
     /** Modi to combine into one view. */
-    .combi_modi        = "window,run",
-    /** Fuzzy matching. */
-    .fuzzy    = FALSE,
-    .glob     = FALSE,
-    .tokenize = TRUE,
-    .regex    = FALSE,
+    .combi_modi      = "window,run",
+    .tokenize        = TRUE,
+    .matching        = "normal",
+    .matching_method = MM_NORMAL,
     /** Monitor */
-    .monitor           =                                        -1,
+    .monitor           = "-5",
     /** set line margin */
-    .line_margin       =                                         2,
+    .line_margin  =                                         2,
+    .line_padding =                                         1,
     /** Set filter */
     .filter            = NULL,
     /** Separator style: dash/solid */
@@ -126,4 +125,7 @@ Settings config = {
     .scrollbar_width   =                                         8,
     .scroll_method     =                                         0,
     .fake_background   = "screenshot",
+    .window_format     = "{w}   {c}   {t}",
+    .click_to_exit     = TRUE,
+    .show_match        = TRUE,
 };
