@@ -810,6 +810,21 @@ void rofi_view_update ( RofiViewState *state )
     TICK_N ( "widgets" );
     cairo_surface_flush ( CacheState.edit_surf );
     rofi_view_queue_redraw ();
+
+    int lines=state->filtered_lines; 
+    lines=MIN(lines,config.menu_lines );//state->max_rows);
+    lines=MAX(lines,0);
+    int h2;
+    int element_height = state->line_height * config.element_height + config.line_margin;
+    h2  = state->top_offset + ( element_height + config.line_margin ) * lines - config.line_margin;
+    h2 += state->border;
+    h2 += 0;
+    if(h2!=CacheState.height){
+        uint16_t mask   = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+        uint32_t vals[] = { CacheState.x, CacheState.y, CacheState.width, h2};
+        xcb_configure_window ( xcb->connection, CacheState.main_window, mask, vals );
+    }
+
 }
 
 /**
