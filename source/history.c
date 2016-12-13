@@ -37,7 +37,7 @@
 #include "history.h"
 #include "settings.h"
 
-#define HISTORY_MAX_ENTRIES    25
+#define HISTORY_MAX_ENTRIES    2048
 
 /**
  * History element
